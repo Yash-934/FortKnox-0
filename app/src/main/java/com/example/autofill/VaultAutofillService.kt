@@ -148,14 +148,17 @@ class VaultAutofillService : AutofillService() {
                 val contentDesc = node.contentDescription?.toString()?.lowercase() ?: ""
                 val inputType = node.inputType
                 val className = node.className?.lowercase() ?: ""
-                val nodeValue = node.autofillValue?.textValue?.toString()
+                val htmlInfo = node.htmlInfo
+                var nodeValue = node.autofillValue?.textValue?.toString()
                     ?: node.text?.toString()
+                if (nodeValue.isNullOrBlank() && htmlInfo != null) {
+                    nodeValue = htmlInfo.attributes?.firstOrNull { it.first.equals("value", ignoreCase = true) }?.second
+                }
 
                 var isPassword = false
                 var isUsername = false
 
                 // 2. Check HTML Attributes (WebView / Chrome)
-                val htmlInfo = node.htmlInfo
                 if (htmlInfo != null) {
                     htmlInfo.attributes?.forEach { attrPair ->
                         val lowerName = attrPair.first?.lowercase() ?: ""
@@ -242,10 +245,16 @@ class VaultAutofillService : AutofillService() {
 
                 // 6. Proximity Heuristic
                 if (isPassword && parsed.usernameId == null && previousTextInputNode != null) {
-                    parsed.usernameId = previousTextInputNode.autofillId
+                    val prevId = previousTextInputNode.autofillId
+                    if (prevId != null) {
+                        parsed.usernameId = prevId
+                        if (!parsed.allCandidateUserIds.contains(prevId)) {
+                            parsed.allCandidateUserIds.add(prevId)
+                        }
+                    }
                     val prevVal = previousTextInputNode.autofillValue?.textValue?.toString()
                         ?: previousTextInputNode.text?.toString()
-                    if (!prevVal.isNullOrBlank()) {
+                    if (!prevVal.isNullOrBlank() && parsed.usernameValue.isNullOrBlank()) {
                         parsed.usernameValue = prevVal
                     }
                 }
@@ -253,19 +262,23 @@ class VaultAutofillService : AutofillService() {
                 // 7. Record matches
                 if (autofillId != null) {
                     if (isPassword) {
-                        parsed.allCandidatePassIds.add(autofillId)
+                        if (!parsed.allCandidatePassIds.contains(autofillId)) {
+                            parsed.allCandidatePassIds.add(autofillId)
+                        }
                         if (parsed.passwordId == null) {
                             parsed.passwordId = autofillId
                         }
-                        if (!nodeValue.isNullOrBlank()) {
+                        if (!nodeValue.isNullOrBlank() && parsed.passwordValue.isNullOrBlank()) {
                             parsed.passwordValue = nodeValue
                         }
                     } else if (isUsername) {
-                        parsed.allCandidateUserIds.add(autofillId)
+                        if (!parsed.allCandidateUserIds.contains(autofillId)) {
+                            parsed.allCandidateUserIds.add(autofillId)
+                        }
                         if (parsed.usernameId == null) {
                             parsed.usernameId = autofillId
                         }
-                        if (!nodeValue.isNullOrBlank()) {
+                        if (!nodeValue.isNullOrBlank() && parsed.usernameValue.isNullOrBlank()) {
                             parsed.usernameValue = nodeValue
                         }
                     } else if (isTextClass || className.contains("edittext") || className.contains("input")) {
@@ -344,12 +357,26 @@ class VaultAutofillService : AutofillService() {
                         putExtra("EXTRA_DOMAIN", parsed.webDomain)
                         putExtra("EXTRA_PACKAGE", parsed.packageName)
                         putExtra("EXTRA_MODE", "FILL")
+                        putExtra("EXTRA_REQUEST_ID", request.id)
+                        parsed.usernameId?.let { putExtra("EXTRA_USER_ID", it) }
+                        parsed.passwordId?.let { putExtra("EXTRA_PASS_ID", it) }
+                        if (parsed.allCandidateUserIds.isNotEmpty()) {
+                            putParcelableArrayListExtra("EXTRA_ALL_USER_IDS", ArrayList(parsed.allCandidateUserIds))
+                        }
+                        if (parsed.allCandidatePassIds.isNotEmpty()) {
+                            putParcelableArrayListExtra("EXTRA_ALL_PASS_IDS", ArrayList(parsed.allCandidatePassIds))
+                        }
+                    }
+                    val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_CANCEL_CURRENT
+                    } else {
+                        PendingIntent.FLAG_CANCEL_CURRENT
                     }
                     val pendingIntent = PendingIntent.getActivity(
                         applicationContext,
                         1001,
                         authIntent,
-                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_CANCEL_CURRENT
+                        flags
                     )
 
                     val authPresentation = createAuthPresentation(applicationContext)
@@ -418,8 +445,23 @@ class VaultAutofillService : AutofillService() {
                     if (userId != null) {
                         optionalIds.add(userId)
                     }
+                    for (extraPass in parsed.allCandidatePassIds) {
+                        if (extraPass != passId && !optionalIds.contains(extraPass)) {
+                            optionalIds.add(extraPass)
+                        }
+                    }
+                    for (extraUser in parsed.allCandidateUserIds) {
+                        if (extraUser != userId && !optionalIds.contains(extraUser)) {
+                            optionalIds.add(extraUser)
+                        }
+                    }
                 } else if (userId != null) {
                     requiredIds.add(userId)
+                    for (extraUser in parsed.allCandidateUserIds) {
+                        if (extraUser != userId && !optionalIds.contains(extraUser)) {
+                            optionalIds.add(extraUser)
+                        }
+                    }
                 }
 
                 if (requiredIds.isNotEmpty()) {
@@ -451,19 +493,26 @@ class VaultAutofillService : AutofillService() {
     override fun onSaveRequest(request: SaveRequest, callback: SaveCallback) {
         AutofillLogger.log(applicationContext, "onSaveRequest RECEIVED", "Save request triggered.")
 
-        val fillContexts = request.fillContexts
-        val latestContext = fillContexts.lastOrNull()
-        val structure = latestContext?.structure
+        var username = ""
+        var password = ""
+        var webDomain: String? = null
+        var packageName: String? = null
 
-        if (structure == null) {
-            AutofillLogger.log(applicationContext, "onSaveRequest", "No AssistStructure in save context.")
-            callback.onSuccess()
-            return
+        // Aggregate structure parsing from all fill contexts (supports multi-screen flows)
+        for (fillContext in request.fillContexts) {
+            val structure = fillContext.structure ?: continue
+            val parsed = parseStructure(structure)
+            if (!parsed.usernameValue.isNullOrBlank()) username = parsed.usernameValue!!.trim()
+            if (!parsed.passwordValue.isNullOrBlank()) password = parsed.passwordValue!!.trim()
+            if (!parsed.webDomain.isNullOrBlank()) webDomain = parsed.webDomain
+            if (!parsed.packageName.isNullOrBlank()) packageName = parsed.packageName
         }
 
-        val parsed = parseStructure(structure)
-        val username = parsed.usernameValue?.trim() ?: ""
-        val password = parsed.passwordValue?.trim() ?: ""
+        AutofillLogger.log(
+            applicationContext,
+            "onSaveRequest PARSED",
+            "domain=$webDomain, pkg=$packageName, hasUser=${username.isNotBlank()}, hasPass=${password.isNotBlank()}"
+        )
 
         if (password.isBlank() && username.isBlank()) {
             AutofillLogger.log(applicationContext, "onSaveRequest", "Username and password both empty. Skipping.")
@@ -474,34 +523,44 @@ class VaultAutofillService : AutofillService() {
         serviceScope.launch {
             try {
                 val repository = VaultRepository(applicationContext)
-                val candidateTitle = sanitizeTitle(parsed.webDomain, parsed.packageName)
-                val candidateFolder = sanitizeFolder(parsed.webDomain, parsed.packageName)
+                val candidateTitle = sanitizeTitle(webDomain, packageName)
+                val candidateFolder = sanitizeFolder(webDomain, packageName)
 
                 if (repository.isUnlocked.value) {
                     val entry = VaultEntry(
                         title = candidateTitle,
                         username = username,
                         password = password,
-                        url = parsed.webDomain ?: parsed.packageName ?: "",
+                        url = webDomain ?: packageName ?: "",
                         folder = candidateFolder,
                         category = VaultCategory.LOGINS,
                         notes = "Captured automatically via Android Autofill"
                     )
                     repository.saveEntry(entry)
-                    AutofillLogger.log(applicationContext, "onSaveRequest SAVED", "Encrypted credentials for $candidateTitle.")
+                    AutofillLogger.log(applicationContext, "onSaveRequest SAVED", "Encrypted credentials saved for $candidateTitle.")
+                    callback.onSuccess()
                 } else {
-                    AutofillLogger.log(applicationContext, "onSaveRequest LOCKED", "Vault locked. Launching AutofillAuthActivity to confirm save.")
+                    AutofillLogger.log(applicationContext, "onSaveRequest LOCKED", "Vault locked. Requesting auth for Save.")
                     val saveIntent = Intent(applicationContext, AutofillAuthActivity::class.java).apply {
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
                         putExtra("EXTRA_MODE", "SAVE")
-                        putExtra("EXTRA_DOMAIN", parsed.webDomain)
-                        putExtra("EXTRA_PACKAGE", parsed.packageName)
+                        putExtra("EXTRA_DOMAIN", webDomain)
+                        putExtra("EXTRA_PACKAGE", packageName)
                         putExtra("EXTRA_SAVE_USER", username)
                         putExtra("EXTRA_SAVE_PASS", password)
                     }
-                    applicationContext.startActivity(saveIntent)
+                    val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_CANCEL_CURRENT
+                    } else {
+                        PendingIntent.FLAG_CANCEL_CURRENT
+                    }
+                    val pendingIntent = PendingIntent.getActivity(
+                        applicationContext,
+                        1002,
+                        saveIntent,
+                        flags
+                    )
+                    callback.onSuccess(pendingIntent.intentSender)
                 }
-                callback.onSuccess()
             } catch (e: Exception) {
                 AutofillLogger.log(applicationContext, "onSaveRequest ERROR", "${e.message}")
                 Log.e(TAG, "Autofill save request failed", e)
