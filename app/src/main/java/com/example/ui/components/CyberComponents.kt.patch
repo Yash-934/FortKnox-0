@@ -1,0 +1,11 @@
+--- app/src/main/java/com/example/ui/components/CyberComponents.kt
++++ app/src/main/java/com/example/ui/components/CyberComponents.kt
+@@ -248,7 +248,7 @@
+ @Composable
+ fun CyberGridBackground(modifier: Modifier = Modifier) {
+     Canvas(modifier = modifier.fillMaxSize()) {
+-        val gridColor = CyberCyan.copy(alpha = 0.05f)
++        val gridColor = CyberCyanMuted.copy(alpha = 0.3f)
+         val gridSize = 40.dp.toPx()
+         
+         var x = 0f

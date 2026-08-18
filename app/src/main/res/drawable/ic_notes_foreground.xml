@@ -1,0 +1,22 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Decoy Notepad Background -->
+    <path
+        android:fillColor="#FFE082"
+        android:pathData="M32,24h44c3.31,0 6,2.69 6,6v48c0,3.31 -2.69,6 -6,6H32c-3.31,0 -6,-2.69 -6,-6V30C26,26.69 28.69,24 32,24z" />
+    <!-- Notepad Spiral / Top header -->
+    <path
+        android:fillColor="#FFA000"
+        android:pathData="M26,30c0,-3.31 2.69,-6 6,-6h44c3.31,0 6,2.69 6,6v6H26V30z" />
+    <!-- Note Ruled Lines -->
+    <path
+        android:fillColor="#FFCA28"
+        android:pathData="M34,44h40v3H34z M34,52h40v3H34z M34,60h40v3H34z M34,68h26v3H34z" />
+    <!-- Pencil Accent -->
+    <path
+        android:fillColor="#FF6F00"
+        android:pathData="M66,62l12,-12l4,4l-12,12z M63,65l3,-3l4,4l-7,2z" />
+</vector>

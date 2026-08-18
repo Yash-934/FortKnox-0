@@ -1,0 +1,6 @@
+{
+  "name": "Fort Knox",
+  "description": "Fort Knox military-grade offline password vault with zero-knowledge AES-256-GCM encryption, Argon2id KDF, root detection, and hardware Keystore.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

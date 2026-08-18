@@ -1,0 +1,26 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Calculator Body -->
+    <path
+        android:fillColor="#37474F"
+        android:pathData="M30,22h48c3.31,0 6,2.69 6,6v52c0,3.31 -2.69,6 -6,6H30c-3.31,0 -6,-2.69 -6,-6V28C24,24.69 26.69,22 30,22z" />
+    <!-- Screen Display -->
+    <path
+        android:fillColor="#B0BEC5"
+        android:pathData="M30,28h48v14H30z" />
+    <!-- Display Digit Bars -->
+    <path
+        android:fillColor="#263238"
+        android:pathData="M64,32h10v6H64z" />
+    <!-- Grid Buttons -->
+    <path
+        android:fillColor="#78909C"
+        android:pathData="M32,48h10v8H32z M49,48h10v8H49z M66,48h10v8H66z M32,59h10v8H32z M49,59h10v8H49z M66,59h10v8H66z M32,70h10v8H32z M49,70h10v8H49z" />
+    <!-- Equals Button (Accent) -->
+    <path
+        android:fillColor="#FF9800"
+        android:pathData="M66,70h10v8H66z" />
+</vector>
