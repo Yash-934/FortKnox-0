@@ -31,6 +31,7 @@ class VaultPreferences(private val context: Context) {
         val KEY_DISGUISE_MODE = booleanPreferencesKey("is_disguise_mode")
         val KEY_DECOY_TYPE = stringPreferencesKey("decoy_type")
         val KEY_PRIVACY_PROTECTION = booleanPreferencesKey("is_privacy_protection_enabled")
+        val KEY_PHOTO_CAPTURE_ENABLED = booleanPreferencesKey("is_photo_capture_enabled")
         val KEY_PHOTO_TRIGGER_THRESHOLD = intPreferencesKey("photo_trigger_threshold")
         val KEY_PARANOID_2FA = booleanPreferencesKey("is_paranoid_2fa_enabled")
         val KEY_DEVICE_BOUND_BACKUP = booleanPreferencesKey("is_device_bound_backup")
@@ -53,7 +54,8 @@ class VaultPreferences(private val context: Context) {
         val isDisguiseMode: Boolean = false,
         val decoyType: String = "NOTES", // "NOTES" or "CALCULATOR"
         val isPrivacyProtectionEnabled: Boolean = true,
-        val photoTriggerThreshold: Int = 3,
+        val isPhotoCaptureEnabled: Boolean = true,
+        val photoTriggerThreshold: Int = 1,
         val isParanoid2FaEnabled: Boolean = false,
         val isDeviceBoundBackup: Boolean = false,
         val isPeriodicRootCheckEnabled: Boolean = true,
@@ -76,7 +78,8 @@ class VaultPreferences(private val context: Context) {
             isDisguiseMode = prefs[KEY_DISGUISE_MODE] ?: false,
             decoyType = prefs[KEY_DECOY_TYPE] ?: "NOTES",
             isPrivacyProtectionEnabled = prefs[KEY_PRIVACY_PROTECTION] ?: true,
-            photoTriggerThreshold = prefs[KEY_PHOTO_TRIGGER_THRESHOLD] ?: 3,
+            isPhotoCaptureEnabled = prefs[KEY_PHOTO_CAPTURE_ENABLED] ?: true,
+            photoTriggerThreshold = prefs[KEY_PHOTO_TRIGGER_THRESHOLD] ?: 1,
             isParanoid2FaEnabled = prefs[KEY_PARANOID_2FA] ?: false,
             isDeviceBoundBackup = prefs[KEY_DEVICE_BOUND_BACKUP] ?: false,
             isPeriodicRootCheckEnabled = prefs[KEY_PERIODIC_ROOT_CHECK] ?: true,
@@ -173,6 +176,12 @@ class VaultPreferences(private val context: Context) {
 
     suspend fun setPrivacyProtectionEnabled(enabled: Boolean) {
         setPrivacyProtection(enabled)
+    }
+
+    suspend fun setPhotoCaptureEnabled(enabled: Boolean) {
+        context.vaultDataStore.edit { prefs ->
+            prefs[KEY_PHOTO_CAPTURE_ENABLED] = enabled
+        }
     }
 
     suspend fun setPhotoTriggerThreshold(threshold: Int) {

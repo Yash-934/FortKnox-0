@@ -316,9 +316,15 @@ class VaultRepository(
             } catch (e: Exception) {
                 val attempts = preferences.incrementFailedAttempts()
                 val threshold = config.photoTriggerThreshold
-                if (attempts >= threshold) {
-                    val photoBytes = com.example.security.SilentCameraCapture.capturePhotoSilently(context)
-                    recordWrongPasswordAttempt(attempts, photoBytes, "Failed password attempt #$attempts")
+                val isPhotoEnabled = config.isPhotoCaptureEnabled
+                if (isPhotoEnabled && attempts >= threshold) {
+                    val hasPerm = com.example.security.SilentCameraCapture.hasCameraPermission(context)
+                    val photoBytes = if (hasPerm) {
+                        com.example.security.SilentCameraCapture.capturePhotoSilently(context)
+                    } else null
+                    val reason = if (!hasPerm) "Failed password attempt #$attempts (Camera permission not granted)"
+                    else "Failed password attempt #$attempts"
+                    recordWrongPasswordAttempt(attempts, photoBytes, reason)
                 } else {
                     recordWrongPasswordAttempt(attempts, null, "Failed password attempt #$attempts")
                 }
@@ -379,9 +385,15 @@ class VaultRepository(
             } catch (e: Exception) {
                 val attempts = preferences.incrementFailedAttempts()
                 val threshold = config.photoTriggerThreshold
-                if (attempts >= threshold) {
-                    val photoBytes = com.example.security.SilentCameraCapture.capturePhotoSilently(context)
-                    recordWrongPasswordAttempt(attempts, photoBytes, "Failed 2FA password attempt #$attempts")
+                val isPhotoEnabled = config.isPhotoCaptureEnabled
+                if (isPhotoEnabled && attempts >= threshold) {
+                    val hasPerm = com.example.security.SilentCameraCapture.hasCameraPermission(context)
+                    val photoBytes = if (hasPerm) {
+                        com.example.security.SilentCameraCapture.capturePhotoSilently(context)
+                    } else null
+                    val reason = if (!hasPerm) "Failed 2FA password attempt #$attempts (Camera permission not granted)"
+                    else "Failed 2FA password attempt #$attempts"
+                    recordWrongPasswordAttempt(attempts, photoBytes, reason)
                 } else {
                     recordWrongPasswordAttempt(attempts, null, "Failed 2FA password attempt #$attempts")
                 }
@@ -682,5 +694,14 @@ class VaultRepository(
         intrusionLogDao.clearAllLogs()
         preferences.resetAll()
         KeystoreManager.deleteBiometricKey()
+    }
+
+    /**
+     * Diagnostic test method to verify silent camera capture and log an encrypted test entry.
+     */
+    suspend fun testCaptureIntruderPhoto(): Boolean = withContext(Dispatchers.IO) {
+        val photoBytes = com.example.security.SilentCameraCapture.capturePhotoSilently(context)
+        recordWrongPasswordAttempt(0, photoBytes, "Manual Camera Diagnostic Verification")
+        photoBytes != null && photoBytes.isNotEmpty()
     }
 }

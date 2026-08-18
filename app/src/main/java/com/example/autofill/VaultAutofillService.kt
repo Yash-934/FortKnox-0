@@ -14,6 +14,7 @@ import android.service.autofill.FillResponse
 import android.service.autofill.SaveCallback
 import android.service.autofill.SaveInfo
 import android.service.autofill.SaveRequest
+import android.text.InputType
 import android.util.Log
 import android.view.View
 import android.view.autofill.AutofillId
@@ -31,13 +32,14 @@ import kotlinx.coroutines.launch
 import java.util.ArrayDeque
 
 /**
- * Android Autofill Framework Service for Fort Knox Password Manager.
+ * Robust Android Autofill Framework Service for Fort Knox Password Manager.
  *
  * Implements OS-level autofill provider integration, supporting:
- * - Parsing AssistStructure for username/password and web/app domains.
+ * - Comprehensive AssistStructure parsing for username/email/password fields across native apps and WebViews.
  * - FillResponse dataset generation with high-contrast presentation views.
- * - Seamless authenticated unlock flow when vault is locked.
- * - SaveRequest credential extraction and automatic encrypted vault persistence.
+ * - Authenticated unlock flow when vault is locked.
+ * - Always-active SaveInfo registration so system "Save to Fort Knox" prompt appears on form submission.
+ * - Internal debug telemetry logged to app storage (without plaintext passwords).
  */
 @RequiresApi(Build.VERSION_CODES.O)
 class VaultAutofillService : AutofillService() {
@@ -62,14 +64,26 @@ class VaultAutofillService : AutofillService() {
         cancellationSignal: CancellationSignal,
         callback: FillCallback
     ) {
-        val fillContext = request.fillContexts.lastOrNull()
-        val structure = fillContext?.structure ?: run {
+        val fillContexts = request.fillContexts
+        val latestContext = fillContexts.lastOrNull()
+        val structure = latestContext?.structure
+
+        if (structure == null) {
+            AutofillLogger.log(applicationContext, "onFillRequest", "No AssistStructure available in context.")
             callback.onSuccess(null)
             return
         }
 
-        val parsedFields = parseStructure(structure)
-        if (parsedFields.usernameId == null && parsedFields.passwordId == null) {
+        val parsed = parseStructure(structure)
+        AutofillLogger.log(
+            applicationContext,
+            "onFillRequest PARSED",
+            "pkg=${parsed.packageName}, domain=${parsed.webDomain}, hasUserField=${parsed.usernameId != null}, hasPassField=${parsed.passwordId != null}"
+        )
+
+        // If no relevant fields are found in the view tree, return null
+        if (parsed.usernameId == null && parsed.passwordId == null) {
+            AutofillLogger.log(applicationContext, "onFillRequest", "No username or password fields detected.")
             callback.onSuccess(null)
             return
         }
@@ -78,11 +92,16 @@ class VaultAutofillService : AutofillService() {
             try {
                 val repository = VaultRepository(applicationContext)
                 val isUnlocked = repository.isUnlocked.value
+                val responseBuilder = FillResponse.Builder()
+
+                val targetAuthId = parsed.passwordId ?: parsed.usernameId
 
                 if (!isUnlocked) {
+                    AutofillLogger.log(applicationContext, "onFillRequest LOCKED", "Vault is locked. Building authentication prompt.")
                     // Provide unlock prompt
                     val intent = Intent(applicationContext, MainActivity::class.java).apply {
                         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                        putExtra("AUTOFILL_AUTH_REQUEST", true)
                     }
                     val pendingIntent = PendingIntent.getActivity(
                         applicationContext,
@@ -91,79 +110,86 @@ class VaultAutofillService : AutofillService() {
                         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_CANCEL_CURRENT
                     )
 
-                    val authPresentation = RemoteViews(packageName, android.R.layout.simple_list_item_1).apply {
-                        setTextViewText(android.R.id.text1, "🛡️ Unlock Fort Knox to Autofill")
-                    }
+                    val authPresentation = createAuthPresentation()
 
-                    val response = FillResponse.Builder()
-                        .setAuthentication(
-                            arrayOf(parsedFields.usernameId ?: parsedFields.passwordId!!),
+                    if (targetAuthId != null) {
+                        responseBuilder.setAuthentication(
+                            arrayOf(targetAuthId),
                             pendingIntent.intentSender,
                             authPresentation
                         )
-                        .build()
+                    }
+                } else {
+                    // Vault is unlocked - query matched entries
+                    val entries = repository.getAllDecryptedEntries()
+                    val matched = entries.filter { entry ->
+                        val domainMatch = parsed.webDomain != null &&
+                                entry.url.contains(parsed.webDomain!!, ignoreCase = true)
+                        val pkgMatch = parsed.packageName != null &&
+                                entry.url.contains(parsed.packageName!!, ignoreCase = true)
+                        val titleMatch = (parsed.packageName != null && entry.title.contains(parsed.packageName!!, ignoreCase = true)) ||
+                                (parsed.webDomain != null && entry.title.contains(parsed.webDomain!!, ignoreCase = true))
+                        domainMatch || pkgMatch || titleMatch
+                    }.ifEmpty {
+                        entries.filter { it.category == VaultCategory.LOGINS }
+                    }.ifEmpty {
+                        entries
+                    }.take(6)
 
-                    callback.onSuccess(response)
-                    return@launch
+                    AutofillLogger.log(applicationContext, "onFillRequest UNLOCKED", "Matched ${matched.size} vault entries.")
+
+                    for (entry in matched) {
+                        val datasetBuilder = Dataset.Builder()
+                        val presentation = createDatasetPresentation(entry.title, entry.username.ifBlank { "Fort Knox Vault" })
+
+                        parsed.usernameId?.let { uId ->
+                            datasetBuilder.setValue(uId, AutofillValue.forText(entry.username), presentation)
+                        }
+
+                        parsed.passwordId?.let { pId ->
+                            datasetBuilder.setValue(pId, AutofillValue.forText(entry.password), presentation)
+                        }
+
+                        responseBuilder.addDataset(datasetBuilder.build())
+                    }
                 }
 
-                // Vault is unlocked - query matched entries
-                val entries = repository.getAllDecryptedEntries()
-                val matched = entries.filter { entry ->
-                    val domainMatch = parsedFields.webDomain != null &&
-                            entry.url.contains(parsedFields.webDomain!!, ignoreCase = true)
-                    val pkgMatch = parsedFields.packageName != null &&
-                            entry.url.contains(parsedFields.packageName!!, ignoreCase = true)
-                    val titleMatch = (parsedFields.packageName != null && entry.title.contains(parsedFields.packageName!!, ignoreCase = true)) ||
-                            (parsedFields.webDomain != null && entry.title.contains(parsedFields.webDomain!!, ignoreCase = true))
-                    domainMatch || pkgMatch || titleMatch
-                }.ifEmpty {
-                    // Fall back to all login entries if no strict domain match
-                    entries.filter { it.category == VaultCategory.LOGINS }
-                }.ifEmpty {
-                    entries
-                }.take(6)
-
-                if (matched.isEmpty()) {
-                    callback.onSuccess(null)
-                    return@launch
-                }
-
-                val responseBuilder = FillResponse.Builder()
-
-                for (entry in matched) {
-                    val datasetBuilder = Dataset.Builder()
-                    val presentation = RemoteViews(packageName, android.R.layout.simple_list_item_2).apply {
-                        setTextViewText(android.R.id.text1, "🛡️ ${entry.title}")
-                        setTextViewText(android.R.id.text2, entry.username.ifBlank { "Password Only" })
-                    }
-
-                    parsedFields.usernameId?.let { uId ->
-                        datasetBuilder.setValue(uId, AutofillValue.forText(entry.username), presentation)
-                    }
-
-                    parsedFields.passwordId?.let { pId ->
-                        datasetBuilder.setValue(pId, AutofillValue.forText(entry.password), presentation)
-                    }
-
-                    responseBuilder.addDataset(datasetBuilder.build())
-                }
-
-                // Setup SaveInfo so user can save credentials after login
+                // ALWAYS configure SaveInfo so the system "Save to Fort Knox" prompt appears when user inputs credentials
                 val requiredIds = mutableListOf<AutofillId>()
-                parsedFields.usernameId?.let { requiredIds.add(it) }
-                parsedFields.passwordId?.let { requiredIds.add(it) }
+                val optionalIds = mutableListOf<AutofillId>()
+
+                val passId = parsed.passwordId
+                val userId = parsed.usernameId
+
+                if (passId != null) {
+                    requiredIds.add(passId)
+                    if (userId != null) {
+                        optionalIds.add(userId)
+                    }
+                } else if (userId != null) {
+                    requiredIds.add(userId)
+                }
 
                 if (requiredIds.isNotEmpty()) {
-                    val saveInfo = SaveInfo.Builder(
-                        SaveInfo.SAVE_DATA_TYPE_PASSWORD or SaveInfo.SAVE_DATA_TYPE_USERNAME,
-                        requiredIds.toTypedArray()
-                    ).build()
-                    responseBuilder.setSaveInfo(saveInfo)
+                    val saveInfoType = when {
+                        passId != null && userId != null ->
+                            SaveInfo.SAVE_DATA_TYPE_PASSWORD or SaveInfo.SAVE_DATA_TYPE_USERNAME
+                        passId != null -> SaveInfo.SAVE_DATA_TYPE_PASSWORD
+                        else -> SaveInfo.SAVE_DATA_TYPE_USERNAME
+                    }
+
+                    val saveInfoBuilder = SaveInfo.Builder(saveInfoType, requiredIds.toTypedArray())
+                    if (optionalIds.isNotEmpty()) {
+                        saveInfoBuilder.setOptionalIds(optionalIds.toTypedArray())
+                    }
+                    saveInfoBuilder.setFlags(SaveInfo.FLAG_SAVE_ON_ALL_VIEWS_INVISIBLE)
+                    responseBuilder.setSaveInfo(saveInfoBuilder.build())
                 }
 
+                AutofillLogger.log(applicationContext, "onFillRequest SUCCESS", "Returning FillResponse with SaveInfo.")
                 callback.onSuccess(responseBuilder.build())
             } catch (e: Exception) {
+                AutofillLogger.log(applicationContext, "onFillRequest ERROR", "${e.message}")
                 Log.e(TAG, "Autofill fill request failed", e)
                 callback.onFailure(e.message)
             }
@@ -171,17 +197,24 @@ class VaultAutofillService : AutofillService() {
     }
 
     override fun onSaveRequest(request: SaveRequest, callback: SaveCallback) {
-        val fillContext = request.fillContexts.lastOrNull()
-        val structure = fillContext?.structure ?: run {
+        AutofillLogger.log(applicationContext, "onSaveRequest RECEIVED", "User accepted system save prompt.")
+
+        val fillContexts = request.fillContexts
+        val latestContext = fillContexts.lastOrNull()
+        val structure = latestContext?.structure
+
+        if (structure == null) {
+            AutofillLogger.log(applicationContext, "onSaveRequest", "No AssistStructure in save context.")
             callback.onSuccess()
             return
         }
 
-        val parsedFields = parseStructure(structure)
-        val username = parsedFields.usernameValue ?: ""
-        val password = parsedFields.passwordValue ?: ""
+        val parsed = parseStructure(structure)
+        val username = parsed.usernameValue ?: ""
+        val password = parsed.passwordValue ?: ""
 
         if (password.isBlank() && username.isBlank()) {
+            AutofillLogger.log(applicationContext, "onSaveRequest", "Username and password both empty. Skipping.")
             callback.onSuccess()
             return
         }
@@ -190,24 +223,55 @@ class VaultAutofillService : AutofillService() {
             try {
                 val repository = VaultRepository(applicationContext)
                 if (repository.isUnlocked.value) {
-                    val candidateTitle = parsedFields.webDomain
-                        ?: parsedFields.packageName
-                        ?: "Autofill Saved Login"
+                    val candidateTitle = parsed.webDomain
+                        ?: parsed.packageName
+                        ?: "Saved Login"
 
                     val entry = VaultEntry(
                         title = candidateTitle,
                         username = username,
                         password = password,
-                        url = parsedFields.webDomain ?: parsedFields.packageName ?: "",
+                        url = parsed.webDomain ?: parsed.packageName ?: "",
                         category = VaultCategory.LOGINS,
-                        notes = "Saved via Fort Knox Autofill Service"
+                        notes = "Saved via Android Autofill Service"
                     )
                     repository.saveEntry(entry)
+                    AutofillLogger.log(applicationContext, "onSaveRequest SAVED", "Encrypted & persisted credentials for $candidateTitle.")
+                } else {
+                    AutofillLogger.log(applicationContext, "onSaveRequest LOCKED", "Vault is locked. Credentials require unlocked vault to persist.")
                 }
                 callback.onSuccess()
             } catch (e: Exception) {
+                AutofillLogger.log(applicationContext, "onSaveRequest ERROR", "${e.message}")
                 Log.e(TAG, "Autofill save request failed", e)
                 callback.onFailure(e.message)
+            }
+        }
+    }
+
+    private fun createDatasetPresentation(title: String, subtitle: String): RemoteViews {
+        return try {
+            RemoteViews(packageName, R.layout.autofill_dataset_item).apply {
+                setTextViewText(R.id.autofill_title, "🛡️ $title")
+                setTextViewText(R.id.autofill_subtitle, subtitle)
+            }
+        } catch (_: Exception) {
+            RemoteViews(packageName, android.R.layout.simple_list_item_2).apply {
+                setTextViewText(android.R.id.text1, "🛡️ $title")
+                setTextViewText(android.R.id.text2, subtitle)
+            }
+        }
+    }
+
+    private fun createAuthPresentation(): RemoteViews {
+        return try {
+            RemoteViews(packageName, R.layout.autofill_auth_item).apply {
+                setTextViewText(R.id.autofill_auth_title, "🛡️ Unlock Fort Knox to Autofill")
+                setTextViewText(R.id.autofill_auth_subtitle, "Tap to enter PIN or biometric unlock")
+            }
+        } catch (_: Exception) {
+            RemoteViews(packageName, android.R.layout.simple_list_item_1).apply {
+                setTextViewText(android.R.id.text1, "🛡️ Unlock Fort Knox to Autofill")
             }
         }
     }
@@ -238,17 +302,26 @@ class VaultAutofillService : AutofillService() {
             val inputType = node.inputType
             val nodeValue = node.autofillValue?.textValue?.toString() ?: node.text?.toString()
 
-            val isPassword = (inputType and android.text.InputType.TYPE_MASK_CLASS) == android.text.InputType.TYPE_CLASS_TEXT &&
-                    (inputType and android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD != 0 ||
-                     inputType and android.text.InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD != 0 ||
-                     inputType and android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD != 0) ||
+            val isPassword = (inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT &&
+                    (inputType and InputType.TYPE_TEXT_VARIATION_PASSWORD != 0 ||
+                     inputType and InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD != 0 ||
+                     inputType and InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD != 0) ||
                     hints?.contains(View.AUTOFILL_HINT_PASSWORD) == true ||
-                    idEntry.contains("password") || hintText.contains("password") || idEntry.contains("pwd")
+                    hints?.contains("new_password") == true ||
+                    hints?.contains("password") == true ||
+                    idEntry.contains("password") || hintText.contains("password") ||
+                    idEntry.contains("pwd") || idEntry.contains("pass") || idEntry.contains("secret")
 
             val isUsername = hints?.contains(View.AUTOFILL_HINT_USERNAME) == true ||
                     hints?.contains(View.AUTOFILL_HINT_EMAIL_ADDRESS) == true ||
+                    hints?.contains(View.AUTOFILL_HINT_NAME) == true ||
+                    hints?.contains("new_username") == true ||
+                    (inputType and InputType.TYPE_MASK_CLASS == InputType.TYPE_CLASS_TEXT &&
+                     (inputType and InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS != 0 ||
+                      inputType and InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS != 0)) ||
                     idEntry.contains("username") || idEntry.contains("email") || idEntry.contains("login") ||
-                    hintText.contains("username") || hintText.contains("email")
+                    idEntry.contains("user") || idEntry.contains("account") ||
+                    hintText.contains("username") || hintText.contains("email") || hintText.contains("login")
 
             if (isPassword && parsed.passwordId == null) {
                 parsed.passwordId = node.autofillId

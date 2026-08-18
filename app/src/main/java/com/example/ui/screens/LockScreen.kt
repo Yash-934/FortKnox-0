@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
@@ -87,6 +89,11 @@ fun LockScreen(
     isLoading: Boolean = false
 ) {
     val keyboardController = LocalSoftwareKeyboardController.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ -> }
 
     // Suppress system IME keyboard at all times on lock screen
     LaunchedEffect(Unit) {
@@ -296,6 +303,9 @@ fun LockScreen(
                                     }
                                 } else {
                                     if (initialSetupPin == confirmSetupPin) {
+                                        if (!com.example.security.SilentCameraCapture.hasCameraPermission(context)) {
+                                            cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                                        }
                                         onSetupMasterPassword(confirmSetupPin.toCharArray())
                                     } else {
                                         setupMismatchError = "PINs do not match. Please try again."
@@ -305,31 +315,6 @@ fun LockScreen(
                             modifier = Modifier.weight(if (setupStep == 2) 2f else 1f),
                             enabled = if (setupStep == 1) initialSetupPin.length >= 4 else confirmSetupPin.length >= 4,
                             isLoading = isLoading
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // 1-Tap Quick Setup for instant verification
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(38.dp)
-                            .clip(CutCornerShape(8.dp))
-                            .background(CyberCyan.copy(alpha = 0.10f))
-                            .border(1.dp, CyberCyan.copy(alpha = 0.4f), CutCornerShape(8.dp))
-                            .clickable {
-                                initialSetupPin = "1234"
-                                confirmSetupPin = "1234"
-                                onSetupMasterPassword("1234".toCharArray())
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "⚡ 1-Tap Quick Setup: Demo PIN (1234)",
-                            color = CyberCyan,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
@@ -481,31 +466,6 @@ fun LockScreen(
                             enabled = enteredPin.isNotEmpty(),
                             isLoading = isLoading
                         )
-
-                        if (com.example.BuildConfig.DEBUG) {
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(36.dp)
-                                    .clip(CutCornerShape(8.dp))
-                                    .background(CyberCyan.copy(alpha = 0.08f))
-                                    .border(1.dp, CyberCyan.copy(alpha = 0.4f), CutCornerShape(8.dp))
-                                    .clickable {
-                                        enteredPin = "1234"
-                                        onUnlockWithPassword("1234".toCharArray())
-                                    },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "⚡ Quick Unlock: Demo PIN (1234)",
-                                    color = CyberCyan,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
 
                         if (config.isBiometricEnabled && config.isParanoid2FaEnabled) {
                             Spacer(modifier = Modifier.height(10.dp))

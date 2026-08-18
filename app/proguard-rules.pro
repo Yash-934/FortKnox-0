@@ -16,6 +16,7 @@
 # debugging stack traces.
 #-keepattributes SourceFile,LineNumberTable
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Preserve AutofillService and components from obfuscation
+-keep class com.example.autofill.VaultAutofillService { *; }
+-keep class com.example.autofill.** { *; }
+

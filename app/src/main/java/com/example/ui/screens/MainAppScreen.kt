@@ -600,8 +600,21 @@ fun MainAppScreen(
                             onToggleScreenRecordingDetection = { enable ->
                                 scope.launch { repository.preferences.setScreenRecordingDetectionEnabled(enable) }
                             },
+                            onTogglePhotoCapture = { enable ->
+                                scope.launch { repository.preferences.setPhotoCaptureEnabled(enable) }
+                            },
                             onSetPhotoTriggerThreshold = { count ->
                                 scope.launch { repository.preferences.setPhotoTriggerThreshold(count) }
+                            },
+                            onTestCapturePhoto = {
+                                scope.launch {
+                                    val success = repository.testCaptureIntruderPhoto()
+                                    if (success) {
+                                        snackbarHostState.showSnackbar("Diagnostic photo captured & encrypted into Intruder Logs!")
+                                    } else {
+                                        snackbarHostState.showSnackbar("Camera capture attempted. Check Intruder Logs.")
+                                    }
+                                }
                             },
                             onNavigateToScanner = {
                                 showScannerScreen = true

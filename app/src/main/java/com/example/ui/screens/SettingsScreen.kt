@@ -3,7 +3,9 @@ package com.example.ui.screens
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -89,7 +91,9 @@ fun SettingsScreen(
     onSetDecoyType: (String) -> Unit = {},
     onTogglePrivacyProtection: (Boolean) -> Unit,
     onToggleScreenRecordingDetection: (Boolean) -> Unit = {},
+    onTogglePhotoCapture: (Boolean) -> Unit = {},
     onSetPhotoTriggerThreshold: (Int) -> Unit,
+    onTestCapturePhoto: () -> Unit = {},
     onNavigateToScanner: () -> Unit,
     onNavigateToIntruderLogs: () -> Unit = {},
     onNavigateToAbout: () -> Unit,
@@ -103,14 +107,25 @@ fun SettingsScreen(
     var showRotateKeyDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     var showRestorePasswordDialog by remember { mutableStateOf(false) }
+    var showAutofillLogsDialog by remember { mutableStateOf(false) }
+    var autofillLogContent by remember { mutableStateOf("") }
     
     val context = androidx.compose.ui.platform.LocalContext.current
+
+    var hasCameraPerm by remember {
+        mutableStateOf(com.example.security.SilentCameraCapture.hasCameraPermission(context))
+    }
 
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
+        hasCameraPerm = isGranted
         if (isGranted) {
-            android.widget.Toast.makeText(context, "Camera permission granted for intruder capture", android.widget.Toast.LENGTH_SHORT).show()
+            onTogglePhotoCapture(true)
+            android.widget.Toast.makeText(context, "Camera permission granted! Intruder photo capture activated.", android.widget.Toast.LENGTH_SHORT).show()
+        } else {
+            onTogglePhotoCapture(false)
+            android.widget.Toast.makeText(context, "Camera permission is required to capture intruder photos upon wrong PIN.", android.widget.Toast.LENGTH_LONG).show()
         }
     }
 
@@ -361,79 +376,189 @@ fun SettingsScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Wrong Password Photo Trigger Threshold
+                // Intruder Selfie Photo Capture Toggle
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Intruder Selfie Photo Capture",
+                                color = CyberTextPrimary,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(CutCornerShape(4.dp))
+                                    .background(CyberLaserRed.copy(alpha = 0.2f))
+                                    .padding(horizontal = 5.dp, vertical = 2.dp)
+                            ) {
+                                Text("CAMERA", color = CyberLaserRed, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
                         Text(
-                            text = "Intruder Photo Trigger Threshold",
-                            color = CyberTextPrimary,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = "Silently captures camera photo after failed attempts",
+                            text = "Silently captures front-camera photo of unauthorized users upon wrong PIN attempts.",
                             color = CyberTextMuted,
-                            fontSize = 12.sp
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(top = 2.dp)
                         )
                     }
+                    Switch(
+                        checked = config.isPhotoCaptureEnabled,
+                        onCheckedChange = { isChecked ->
+                            if (isChecked) {
+                                if (com.example.security.SilentCameraCapture.hasCameraPermission(context)) {
+                                    hasCameraPerm = true
+                                    onTogglePhotoCapture(true)
+                                } else {
+                                    cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                                }
+                            } else {
+                                onTogglePhotoCapture(false)
+                            }
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = CyberBackground,
+                            checkedTrackColor = CyberLaserRed,
+                            uncheckedTrackColor = CyberSurfaceVariant
+                        )
+                    )
                 }
-                Spacer(modifier = Modifier.height(8.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    val thresholds = listOf(1, 2, 3, 5)
-                    for (t in thresholds) {
-                        val isSelected = config.photoTriggerThreshold == t
-                        Surface(
+                if (config.isPhotoCaptureEnabled) {
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Permission Status Badge / Prompt
+                    if (hasCameraPerm) {
+                        Box(
                             modifier = Modifier
-                                .weight(1f)
-                                .clip(androidx.compose.foundation.shape.CutCornerShape(8.dp))
-                                .clickable {
-                                    if (androidx.core.content.ContextCompat.checkSelfPermission(
-                                            context,
-                                            android.Manifest.permission.CAMERA
-                                        ) != android.content.pm.PackageManager.PERMISSION_GRANTED
-                                    ) {
-                                        cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
-                                    }
-                                    onSetPhotoTriggerThreshold(t)
-                                },
-                            color = if (isSelected) CyberLaserRed.copy(alpha = 0.2f) else CyberSurfaceVariant,
-                            border = androidx.compose.foundation.BorderStroke(
-                                1.dp,
-                                if (isSelected) CyberLaserRed else CyberBorder
-                            )
+                                .fillMaxWidth()
+                                .clip(CutCornerShape(6.dp))
+                                .background(CyberEmerald.copy(alpha = 0.12f))
+                                .border(1.dp, CyberEmerald.copy(alpha = 0.35f), CutCornerShape(6.dp))
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
                         ) {
-                            Text(
-                                text = "$t Attempt${if (t > 1) "s" else ""}",
-                                color = if (isSelected) CyberLaserRed else CyberTextSecondary,
-                                fontSize = 11.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                modifier = Modifier.padding(vertical = 8.dp),
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Shield, contentDescription = null, tint = CyberEmerald, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Camera Permission Granted: Front-camera ready for silent capture",
+                                    color = CyberEmerald,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(CutCornerShape(6.dp))
+                                .background(CyberLaserRed.copy(alpha = 0.15f))
+                                .border(1.dp, CyberLaserRed.copy(alpha = 0.4f), CutCornerShape(6.dp))
+                                .padding(10.dp)
+                        ) {
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Warning, contentDescription = null, tint = CyberLaserRed, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Camera Permission Required to Capture Photos",
+                                        color = CyberLaserRed,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "Android requires camera runtime access so Fort Knox can silently photograph wrong PIN entries.",
+                                    color = CyberTextSecondary,
+                                    fontSize = 11.sp
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                CyberButton(
+                                    text = "GRANT CAMERA PERMISSION",
+                                    color = CyberLaserRed,
+                                    onClick = { cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA) },
+                                    modifier = Modifier.height(32.dp)
+                                )
+                            }
                         }
                     }
-                }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    CyberOutlinedButton(
-                        text = "VIEW INTRUDER LOGS & PHOTOS",
-                        color = CyberLaserRed,
-                        onClick = onNavigateToIntruderLogs,
-                        modifier = Modifier.height(34.dp)
+                    Text(
+                        text = "Trigger Photo After Wrong PIN Attempts:",
+                        color = CyberTextSecondary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
                     )
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        val thresholds = listOf(1, 2, 3, 5)
+                        for (t in thresholds) {
+                            val isSelected = config.photoTriggerThreshold == t
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(CutCornerShape(8.dp))
+                                    .clickable {
+                                        if (!com.example.security.SilentCameraCapture.hasCameraPermission(context)) {
+                                            cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                                        }
+                                        onSetPhotoTriggerThreshold(t)
+                                    },
+                                color = if (isSelected) CyberLaserRed.copy(alpha = 0.2f) else CyberSurfaceVariant,
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp,
+                                    if (isSelected) CyberLaserRed else CyberBorder
+                                )
+                            ) {
+                                Text(
+                                    text = "$t Attempt${if (t > 1) "s" else ""}",
+                                    color = if (isSelected) CyberLaserRed else CyberTextSecondary,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    modifier = Modifier.padding(vertical = 8.dp),
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        CyberOutlinedButton(
+                            text = "TEST CAMERA PHOTO",
+                            color = CyberCyan,
+                            onClick = onTestCapturePhoto,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(34.dp)
+                        )
+
+                        CyberButton(
+                            text = "VIEW INTRUDER LOGS",
+                            color = CyberLaserRed,
+                            onClick = onNavigateToIntruderLogs,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(34.dp)
+                        )
+                    }
                 }
             }
         }
@@ -464,10 +589,22 @@ fun SettingsScreen(
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    CyberOutlinedButton(
+                        text = "VIEW DIAGNOSTIC LOGS",
+                        color = CyberCyan,
+                        onClick = {
+                            autofillLogContent = com.example.autofill.AutofillLogger.getLogFileContent(context)
+                            showAutofillLogsDialog = true
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(34.dp)
+                    )
+
                     CyberButton(
-                        text = "MANAGE AUTOFILL SETTINGS",
+                        text = "MANAGE AUTOFILL",
                         color = CyberCyan,
                         onClick = {
                             try {
@@ -489,7 +626,9 @@ fun SettingsScreen(
                                 }
                             }
                         },
-                        modifier = Modifier.height(34.dp)
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(34.dp)
                     )
                 }
             }
@@ -1062,6 +1201,75 @@ fun SettingsScreen(
                     selectedRestoreUri = null
                 }) {
                     Text("CANCEL", color = CyberTextSecondary)
+                }
+            },
+            containerColor = CyberSurface
+        )
+    }
+
+    // Autofill Diagnostic Logs Dialog
+    if (showAutofillLogsDialog) {
+        AlertDialog(
+            onDismissRequest = { showAutofillLogsDialog = false },
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "AUTOFILL DIAGNOSTICS",
+                        color = CyberCyan,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(320.dp)
+                ) {
+                    Text(
+                        text = "Internal telemetry log showing AutofillService invocations, detected input fields, datasets returned, and save triggers (no plaintext passwords):",
+                        color = CyberTextMuted,
+                        fontSize = 11.sp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .clip(CutCornerShape(6.dp))
+                            .background(CyberBackground)
+                            .padding(10.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Text(
+                            text = autofillLogContent.ifBlank { "No autofill events logged yet.\n\nTo test:\n1. Enable Fort Knox in system Autofill settings.\n2. Tap username/password in Chrome or another app.\n3. Re-open this log." },
+                            color = CyberTextSecondary,
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace,
+                            lineHeight = 14.sp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(
+                        onClick = {
+                            com.example.autofill.AutofillLogger.clearLogs(context)
+                            autofillLogContent = com.example.autofill.AutofillLogger.getLogFileContent(context)
+                        }
+                    ) {
+                        Text("CLEAR LOGS", color = CyberLaserRed, fontSize = 12.sp)
+                    }
+                    TextButton(onClick = { showAutofillLogsDialog = false }) {
+                        Text("CLOSE", color = CyberCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             },
             containerColor = CyberSurface
