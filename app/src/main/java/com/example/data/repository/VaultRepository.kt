@@ -226,22 +226,44 @@ class VaultRepository(
             if (vaultDao.getAllEntriesSnapshot().isEmpty()) {
                 val demoItems = listOf(
                     VaultEntry(
+                        title = "GitHub - Enterprise Dev",
+                        username = "alex-dev-sec",
+                        password = "ghp_98yTvX#29LmQ4zR7810@k",
+                        url = "https://github.com",
+                        notes = "SSH and token key repository for enterprise code",
+                        category = VaultCategory.LOGINS,
+                        folder = "GitHub",
+                        isFavorite = true
+                    ),
+                    VaultEntry(
+                        title = "GitHub - OpenSource / Personal",
+                        username = "alex-opensource",
+                        password = "gho_kP9#vX29LmQ4zR89@open",
+                        url = "https://github.com",
+                        notes = "Personal repositories & public open source keys",
+                        category = VaultCategory.LOGINS,
+                        folder = "GitHub",
+                        isFavorite = true
+                    ),
+                    VaultEntry(
                         title = "Google Workspace",
                         username = "alex.security@gmail.com",
                         password = "k8#P9!vX\$mZ2@qW9",
                         url = "https://accounts.google.com",
                         notes = "Primary 2FA authenticated workspace account",
                         category = VaultCategory.LOGINS,
+                        folder = "Google",
                         isFavorite = true
                     ),
                     VaultEntry(
-                        title = "GitHub Enterprise",
-                        username = "alex-dev-sec",
-                        password = "ghp_98yTvX#29LmQ4zR7810@k",
-                        url = "https://github.com",
-                        notes = "SSH and token key repository",
-                        category = VaultCategory.SECURE_NOTES,
-                        isFavorite = true
+                        title = "Google Cloud Console",
+                        username = "gcp-alex-admin@company.com",
+                        password = "Gcp#Vault!2026Secure",
+                        url = "https://console.cloud.google.com",
+                        notes = "Production Kubernetes cluster admin",
+                        category = VaultCategory.LOGINS,
+                        folder = "Google",
+                        isFavorite = false
                     ),
                     VaultEntry(
                         title = "AWS Production Console",
@@ -250,6 +272,7 @@ class VaultRepository(
                         url = "https://aws.amazon.com",
                         notes = "IAM root console access with hardware MFA",
                         category = VaultCategory.LOGINS,
+                        folder = "AWS Cloud",
                         isFavorite = false
                     ),
                     VaultEntry(
@@ -259,6 +282,7 @@ class VaultRepository(
                         url = "https://netflix.com",
                         notes = "Family 4K subscription",
                         category = VaultCategory.LOGINS,
+                        folder = "Entertainment",
                         isFavorite = false
                     )
                 )
@@ -599,6 +623,7 @@ class VaultRepository(
             put("password", entry.password)
             put("url", entry.url)
             put("notes", entry.notes)
+            put("folder", entry.folder)
         }
 
         val plaintextBytes = payloadJson.toString().toByteArray(StandardCharsets.UTF_8)
@@ -659,6 +684,7 @@ class VaultRepository(
                 url = json.optString("url", ""),
                 notes = json.optString("notes", ""),
                 category = category,
+                folder = json.optString("folder", ""),
                 isFavorite = entity.isFavorite,
                 createdAt = entity.createdAt,
                 updatedAt = entity.updatedAt

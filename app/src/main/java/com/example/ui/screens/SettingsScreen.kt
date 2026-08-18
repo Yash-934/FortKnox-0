@@ -112,6 +112,8 @@ fun SettingsScreen(
     
     val context = androidx.compose.ui.platform.LocalContext.current
 
+    val activity = context as? com.example.MainActivity
+
     var hasCameraPerm by remember {
         mutableStateOf(com.example.security.SilentCameraCapture.hasCameraPermission(context))
     }
@@ -126,6 +128,23 @@ fun SettingsScreen(
         } else {
             onTogglePhotoCapture(false)
             android.widget.Toast.makeText(context, "Camera permission is required to capture intruder photos upon wrong PIN.", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun requestCamera() {
+        if (activity != null) {
+            activity.requestCameraPermissionDirectly { granted ->
+                hasCameraPerm = granted
+                if (granted) {
+                    onTogglePhotoCapture(true)
+                    android.widget.Toast.makeText(context, "Camera permission granted! Intruder photo capture activated.", android.widget.Toast.LENGTH_SHORT).show()
+                } else {
+                    onTogglePhotoCapture(false)
+                    android.widget.Toast.makeText(context, "Camera permission is required to capture intruder photos upon wrong PIN.", android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+        } else {
+            cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
         }
     }
 
@@ -382,29 +401,37 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 12.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
                             Text(
-                                text = "Intruder Selfie Photo Capture",
+                                text = "Intruder Selfie",
                                 color = CyberTextPrimary,
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
                             Box(
                                 modifier = Modifier
                                     .clip(CutCornerShape(4.dp))
                                     .background(CyberLaserRed.copy(alpha = 0.2f))
-                                    .padding(horizontal = 5.dp, vertical = 2.dp)
+                                    .border(1.dp, CyberLaserRed.copy(alpha = 0.5f), CutCornerShape(4.dp))
+                                    .padding(horizontal = 5.dp, vertical = 1.dp)
                             ) {
                                 Text("CAMERA", color = CyberLaserRed, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                             }
                         }
+                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "Silently captures front-camera photo of unauthorized users upon wrong PIN attempts.",
+                            text = "Silently captures front-camera photo upon wrong PIN entries.",
                             color = CyberTextMuted,
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(top = 2.dp)
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp
                         )
                     }
                     Switch(
@@ -415,7 +442,7 @@ fun SettingsScreen(
                                     hasCameraPerm = true
                                     onTogglePhotoCapture(true)
                                 } else {
-                                    cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                                    requestCamera()
                                 }
                             } else {
                                 onTogglePhotoCapture(false)
@@ -446,7 +473,7 @@ fun SettingsScreen(
                                 Icon(Icons.Default.Shield, contentDescription = null, tint = CyberEmerald, modifier = Modifier.size(15.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = "Camera Permission Granted: Front-camera ready for silent capture",
+                                    text = "Camera Active: Front-camera ready for silent capture",
                                     color = CyberEmerald,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Medium
@@ -467,24 +494,27 @@ fun SettingsScreen(
                                     Icon(Icons.Default.Warning, contentDescription = null, tint = CyberLaserRed, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = "Camera Permission Required to Capture Photos",
+                                        text = "Camera Permission Required",
                                         color = CyberLaserRed,
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
-                                Spacer(modifier = Modifier.height(6.dp))
+                                Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "Android requires camera runtime access so Fort Knox can silently photograph wrong PIN entries.",
+                                    text = "Android requires camera permission to capture wrong PIN intruder attempts.",
                                     color = CyberTextSecondary,
                                     fontSize = 11.sp
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 CyberButton(
-                                    text = "GRANT CAMERA PERMISSION",
+                                    text = "GRANT CAMERA ACCESS",
                                     color = CyberLaserRed,
-                                    onClick = { cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA) },
-                                    modifier = Modifier.height(32.dp)
+                                    fontSize = 11.sp,
+                                    onClick = { requestCamera() },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(36.dp)
                                 )
                             }
                         }
@@ -513,7 +543,7 @@ fun SettingsScreen(
                                     .clip(CutCornerShape(8.dp))
                                     .clickable {
                                         if (!com.example.security.SilentCameraCapture.hasCameraPermission(context)) {
-                                            cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                                            requestCamera()
                                         }
                                         onSetPhotoTriggerThreshold(t)
                                     },
@@ -542,21 +572,23 @@ fun SettingsScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         CyberOutlinedButton(
-                            text = "TEST CAMERA PHOTO",
+                            text = "TEST PHOTO",
                             color = CyberCyan,
+                            fontSize = 11.sp,
                             onClick = onTestCapturePhoto,
                             modifier = Modifier
                                 .weight(1f)
-                                .height(34.dp)
+                                .height(38.dp)
                         )
 
                         CyberButton(
-                            text = "VIEW INTRUDER LOGS",
+                            text = "INTRUDER LOGS",
                             color = CyberLaserRed,
+                            fontSize = 11.sp,
                             onClick = onNavigateToIntruderLogs,
                             modifier = Modifier
                                 .weight(1f)
-                                .height(34.dp)
+                                .height(38.dp)
                         )
                     }
                 }
@@ -592,21 +624,24 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     CyberOutlinedButton(
-                        text = "VIEW DIAGNOSTIC LOGS",
+                        text = "VIEW LOGS",
                         color = CyberCyan,
+                        fontSize = 11.sp,
                         onClick = {
                             autofillLogContent = com.example.autofill.AutofillLogger.getLogFileContent(context)
                             showAutofillLogsDialog = true
                         },
                         modifier = Modifier
                             .weight(1f)
-                            .height(34.dp)
+                            .height(38.dp)
                     )
 
                     CyberButton(
                         text = "MANAGE AUTOFILL",
                         color = CyberCyan,
+                        fontSize = 11.sp,
                         onClick = {
+                            activity?.grantGracePeriod(60)
                             try {
                                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                                     val intent = android.content.Intent(android.provider.Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE).apply {
@@ -628,7 +663,7 @@ fun SettingsScreen(
                         },
                         modifier = Modifier
                             .weight(1f)
-                            .height(34.dp)
+                            .height(38.dp)
                     )
                 }
             }

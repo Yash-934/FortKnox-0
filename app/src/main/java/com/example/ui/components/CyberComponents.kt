@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -42,7 +43,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.CyberBackground
@@ -98,20 +101,22 @@ fun CyberButton(
     color: Color = CyberCyan,
     textColor: Color = CyberBackground,
     enabled: Boolean = true,
-    isLoading: Boolean = false
+    isLoading: Boolean = false,
+    fontSize: TextUnit = 13.sp,
+    cutCorner: Dp = 10.dp,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
 ) {
     val cutShape = CutCornerShape(
-        topStart = 16.dp,
+        topStart = cutCorner,
         topEnd = 0.dp,
-        bottomEnd = 16.dp,
+        bottomEnd = cutCorner,
         bottomStart = 0.dp
     )
     Button(
         onClick = onClick,
         enabled = enabled && !isLoading,
-        modifier = modifier
-            .height(52.dp)
-            .clip(cutShape),
+        modifier = modifier.clip(cutShape),
+        contentPadding = contentPadding,
         colors = ButtonDefaults.buttonColors(
             containerColor = color,
             contentColor = textColor,
@@ -122,21 +127,26 @@ fun CyberButton(
     ) {
         if (isLoading) {
             CircularProgressIndicator(
-                modifier = Modifier.size(22.dp),
+                modifier = Modifier.size(18.dp),
                 color = textColor,
                 strokeWidth = 2.dp
             )
         } else {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 2.dp)
+            ) {
                 if (icon != null) {
-                    Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                 }
                 Text(
                     text = text.uppercase(),
                     fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    letterSpacing = 1.sp
+                    fontSize = fontSize,
+                    letterSpacing = 0.5.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -150,35 +160,41 @@ fun CyberOutlinedButton(
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
     color: Color = CyberCyan,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    fontSize: TextUnit = 13.sp,
+    cutCorner: Dp = 10.dp
 ) {
     val cutShape = CutCornerShape(
-        topStart = 12.dp,
+        topStart = cutCorner,
         topEnd = 0.dp,
-        bottomEnd = 12.dp,
+        bottomEnd = cutCorner,
         bottomStart = 0.dp
     )
     Box(
         modifier = modifier
-            .height(48.dp)
             .clip(cutShape)
             .background(CyberSurfaceVariant.copy(alpha = 0.3f))
             .border(1.dp, if (enabled) color.copy(alpha = 0.8f) else CyberBorder, cutShape)
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 2.dp)
+        ) {
             if (icon != null) {
-                Icon(imageVector = icon, contentDescription = null, tint = if (enabled) color else CyberTextMuted, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
+                Icon(imageVector = icon, contentDescription = null, tint = if (enabled) color else CyberTextMuted, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
             }
             Text(
                 text = text.uppercase(),
                 color = if (enabled) color else CyberTextMuted,
                 fontWeight = FontWeight.Bold,
-                fontSize = 14.sp,
-                letterSpacing = 1.sp
+                fontSize = fontSize,
+                letterSpacing = 0.5.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }

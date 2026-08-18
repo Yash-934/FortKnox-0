@@ -1,7 +1,5 @@
 package com.example.ui.screens
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
@@ -23,8 +21,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -33,11 +34,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockClock
 import androidx.compose.material.icons.filled.Pin
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -91,10 +95,6 @@ fun LockScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
     val context = androidx.compose.ui.platform.LocalContext.current
 
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { _ -> }
-
     // Suppress system IME keyboard at all times on lock screen
     LaunchedEffect(Unit) {
         keyboardController?.hide()
@@ -134,16 +134,156 @@ fun LockScreen(
         label = "radarPulse"
     )
 
+    // ==========================================
+    // WRONG PIN COOLDOWN SCREEN (CENTERED)
+    // ==========================================
+    if (config.isInitialized && isLockedOut && remainingLockoutSec > 0) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(CyberBackground)
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 24.dp, vertical = 20.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Large Pulsing Lockout Crest
+                Box(
+                    modifier = Modifier
+                        .size(86.dp)
+                        .scale(pulseScale)
+                        .clip(CircleShape)
+                        .background(
+                            Brush.radialGradient(
+                                colors = listOf(CyberLaserRed.copy(alpha = 0.35f), Color.Transparent)
+                            )
+                        )
+                        .border(2.dp, CyberLaserRed, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.LockClock,
+                        contentDescription = "Lockout Active",
+                        tint = CyberLaserRed,
+                        modifier = Modifier.size(44.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                Text(
+                    text = "SECURITY LOCKOUT",
+                    color = CyberLaserRed,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 2.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+
+                Text(
+                    text = "ENCLAVE TEMPORARILY FROZEN",
+                    color = CyberTextSecondary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.2.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // High-Tech Countdown Display Card
+                CyberCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    glowColor = CyberLaserRed.copy(alpha = 0.35f),
+                    borderColor = CyberLaserRed
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(vertical = 14.dp, horizontal = 8.dp)
+                    ) {
+                        Text(
+                            text = "COOLDOWN TIME REMAINING",
+                            color = CyberLaserRed,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.5.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Large Digital Timer
+                        Box(
+                            modifier = Modifier
+                                .clip(CutCornerShape(8.dp))
+                                .background(CyberBackground)
+                                .border(1.dp, CyberLaserRed.copy(alpha = 0.6f), CutCornerShape(8.dp))
+                                .padding(horizontal = 24.dp, vertical = 10.dp)
+                        ) {
+                            Text(
+                                text = "00:${remainingLockoutSec.toString().padStart(2, '0')}",
+                                color = CyberLaserRed,
+                                fontSize = 34.sp,
+                                fontWeight = FontWeight.Black,
+                                fontFamily = FontFamily.Monospace,
+                                letterSpacing = 3.sp
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(
+                            text = "Failed attempts: ${config.failedAttempts}/10 (Wipe at 10)",
+                            color = if (config.failedAttempts >= 5) CyberLaserRed else CyberGold,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "Too many wrong PIN attempts. To protect your zero-knowledge vault against brute-force attacks, the key derivation hardware is on mandatory cooldown.",
+                            color = CyberTextMuted,
+                            fontSize = 11.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 8.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "Keypad will automatically reactivate once timer reaches 00:00",
+                    color = CyberTextSecondary,
+                    fontSize = 11.sp,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+        return
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(CyberBackground)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .imePadding()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 24.dp),
+            .padding(horizontal = 20.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Top
     ) {
-        Spacer(modifier = Modifier.height(10.dp))
+        // Generous spacing to clear the camera punch hole / notch
+        Spacer(modifier = Modifier.height(28.dp))
 
         // Futuristic Crest
         Box(
@@ -303,9 +443,6 @@ fun LockScreen(
                                     }
                                 } else {
                                     if (initialSetupPin == confirmSetupPin) {
-                                        if (!com.example.security.SilentCameraCapture.hasCameraPermission(context)) {
-                                            cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
-                                        }
                                         onSetupMasterPassword(confirmSetupPin.toCharArray())
                                     } else {
                                         setupMismatchError = "PINs do not match. Please try again."
@@ -323,43 +460,19 @@ fun LockScreen(
             // ==========================================
             // UNLOCK MODE (100% SCRAMBLED IN-APP KEYPAD)
             // ==========================================
-            if (isLockedOut && remainingLockoutSec > 0) {
-                CyberCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    glowColor = CyberLaserRed.copy(alpha = 0.4f),
-                    borderColor = CyberLaserRed
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CyberCard(modifier = Modifier.fillMaxWidth()) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
-                            text = "SECURITY LOCKOUT ACTIVE",
-                            color = CyberLaserRed,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = 1.sp
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Too many failed attempts. Cryptographic enclave locked for $remainingLockoutSec seconds.",
+                            text = "Enter Master PIN",
                             color = CyberTextPrimary,
-                            fontSize = 13.sp,
-                            textAlign = TextAlign.Center
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
                         )
-                    }
-                }
-            } else {
-                CyberCard(modifier = Modifier.fillMaxWidth()) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Enter Master PIN",
-                                color = CyberTextPrimary,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold
-                            )
 
                             if (enteredPin.isNotEmpty()) {
                                 Row(
@@ -507,7 +620,6 @@ fun LockScreen(
                     }
                 }
             }
-        }
 
         Spacer(modifier = Modifier.height(18.dp))
 

@@ -20,8 +20,21 @@ class VaultLifecycleObserver(
 
     private var backgroundTimestamp: Long = 0L
     private var idleJob: Job? = null
+    private var exemptionUntil: Long = 0L
+
+    /**
+     * Grants a temporary grace period (e.g. 60 seconds) during which system dialogs,
+     * permission prompts, biometric dialogs, or settings intents won't trigger auto-lock.
+     */
+    fun grantGracePeriod(seconds: Int = 60) {
+        exemptionUntil = System.currentTimeMillis() + (seconds * 1000L)
+    }
 
     override fun onStop(owner: LifecycleOwner) {
+        if (System.currentTimeMillis() < exemptionUntil) {
+            // In grace period (e.g. system permission dialog displayed), do not lock
+            return
+        }
         backgroundTimestamp = System.currentTimeMillis()
         coroutineScope.launch {
             val config = repository.preferences.configFlow.first()
@@ -33,6 +46,10 @@ class VaultLifecycleObserver(
     }
 
     override fun onStart(owner: LifecycleOwner) {
+        if (System.currentTimeMillis() < exemptionUntil) {
+            // Returning from system dialog within grace period
+            return
+        }
         if (backgroundTimestamp > 0) {
             val elapsedSec = (System.currentTimeMillis() - backgroundTimestamp) / 1000
             coroutineScope.launch {

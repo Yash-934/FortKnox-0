@@ -21,6 +21,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
@@ -78,6 +80,7 @@ fun AddEditEntryScreen(
     var url by remember { mutableStateOf(entryToEdit?.url ?: "") }
     var notes by remember { mutableStateOf(entryToEdit?.notes ?: "") }
     var category by remember { mutableStateOf(entryToEdit?.category ?: VaultCategory.LOGINS) }
+    var folder by remember { mutableStateOf(entryToEdit?.folder ?: "") }
     var isFavorite by remember { mutableStateOf(entryToEdit?.isFavorite ?: false) }
 
     var passwordVisible by remember { mutableStateOf(false) }
@@ -180,12 +183,111 @@ fun AddEditEntryScreen(
                     // Title
                     OutlinedTextField(
                         value = title,
-                        onValueChange = { title = it },
-                        label = { Text("Title / Service Name (e.g. Google, GitHub)") },
+                        onValueChange = { 
+                            title = it 
+                            if (folder.isBlank()) {
+                                val lower = it.lowercase()
+                                if (lower.contains("github")) folder = "GitHub"
+                                else if (lower.contains("google")) folder = "Google"
+                                else if (lower.contains("aws") || lower.contains("amazon")) folder = "AWS Cloud"
+                            }
+                        },
+                        label = { Text("Title / Service Name (e.g. GitHub Enterprise)") },
                         modifier = Modifier.fillMaxWidth(),
                         colors = customFieldColors(),
                         singleLine = true
                     )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Folder / Grouping Section
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "FOLDER / GROUP",
+                                color = CyberTextSecondary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            if (folder.isNotBlank()) {
+                                Text(
+                                    text = "CLEAR",
+                                    color = CyberCyan,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.clickable { folder = "" }
+                                )
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Quick folder chips
+                        val suggestedFolders = listOf("GitHub", "Google", "AWS Cloud", "Work", "Personal", "Crypto", "Entertainment", "Finance")
+                        androidx.compose.foundation.lazy.LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            items(suggestedFolders.size) { idx ->
+                                val f = suggestedFolders[idx]
+                                val isSel = folder.equals(f, ignoreCase = true)
+                                Surface(
+                                    modifier = Modifier
+                                        .clip(androidx.compose.foundation.shape.CutCornerShape(6.dp))
+                                        .clickable { folder = if (isSel) "" else f },
+                                    color = if (isSel) CyberCyan.copy(alpha = 0.25f) else CyberSurfaceVariant,
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        if (isSel) CyberCyan else CyberBorder
+                                    )
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Folder,
+                                            contentDescription = null,
+                                            tint = if (isSel) CyberCyan else CyberTextMuted,
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = f,
+                                            color = if (isSel) CyberCyan else CyberTextSecondary,
+                                            fontSize = 11.sp,
+                                            fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        OutlinedTextField(
+                            value = folder,
+                            onValueChange = { folder = it },
+                            label = { Text("Folder Name (e.g. GitHub)") },
+                            placeholder = { Text("Enter custom folder or pick above", color = CyberTextMuted) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.FolderOpen,
+                                    contentDescription = null,
+                                    tint = CyberCyan,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = customFieldColors(),
+                            singleLine = true
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(14.dp))
 
@@ -302,6 +404,7 @@ fun AddEditEntryScreen(
                             url = url.trim(),
                             notes = notes.trim(),
                             category = category,
+                            folder = folder.trim(),
                             isFavorite = isFavorite,
                             createdAt = entryToEdit?.createdAt ?: System.currentTimeMillis(),
                             updatedAt = System.currentTimeMillis()

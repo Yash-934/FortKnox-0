@@ -58,10 +58,18 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    fun grantGracePeriod(seconds: Int = 60) {
+        if (::lifecycleObserver.isInitialized) {
+            lifecycleObserver.grantGracePeriod(seconds)
+        }
+    }
+
     // LEGACY FIX FOR 16-BIT REQUEST CODE BUG ON CERTAIN ROMS
     var pendingFileCallback: ((android.net.Uri?) -> Unit)? = null
+    var pendingCameraCallback: ((Boolean) -> Unit)? = null
 
     fun launchLegacyFilePicker(intent: android.content.Intent, onResult: (android.net.Uri?) -> Unit) {
+        grantGracePeriod(60)
         pendingFileCallback = onResult
         try {
             // Using a low request code (< 65535) to avoid IllegalArgumentException on custom ROMs
@@ -69,6 +77,30 @@ class MainActivity : FragmentActivity() {
         } catch (e: Exception) {
             onResult(null)
             android.widget.Toast.makeText(this, "File picker error: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun requestCameraPermissionDirectly(onResult: (Boolean) -> Unit) {
+        grantGracePeriod(60)
+        if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            onResult(true)
+            return
+        }
+        pendingCameraCallback = onResult
+        try {
+            requestPermissions(arrayOf(android.Manifest.permission.CAMERA), 2002)
+        } catch (e: Exception) {
+            onResult(false)
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        if (requestCode == 2002) {
+            val granted = grantResults.isNotEmpty() && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED
+            pendingCameraCallback?.invoke(granted)
+            pendingCameraCallback = null
+        } else {
+            super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         }
     }
 

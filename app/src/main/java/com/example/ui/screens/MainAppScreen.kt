@@ -116,6 +116,7 @@ fun MainAppScreen(
     var currentTab by remember { mutableStateOf(AppTab.VAULT) }
     var editingEntry by remember { mutableStateOf<VaultEntry?>(null) }
     var isAddingEntry by remember { mutableStateOf(false) }
+    var defaultFolderForNewEntry by remember { mutableStateOf<String?>(null) }
     var unlockErrorMessage by remember { mutableStateOf<String?>(null) }
     var isCryptoBusy by remember { mutableStateOf(false) }
     var rootWarningDismissed by remember { mutableStateOf(false) }
@@ -452,13 +453,18 @@ fun MainAppScreen(
     }
 
     if (isAddingEntry || editingEntry != null) {
+        val entryForForm = editingEntry ?: if (defaultFolderForNewEntry != null) {
+            VaultEntry(title = "", folder = defaultFolderForNewEntry!!)
+        } else null
+
         AddEditEntryScreen(
-            entryToEdit = editingEntry,
+            entryToEdit = entryForForm,
             onSave = { entry ->
                 scope.launch {
                     repository.saveEntry(entry)
                     isAddingEntry = false
                     editingEntry = null
+                    defaultFolderForNewEntry = null
                     snackbarHostState.showSnackbar("Entry encrypted and saved")
                 }
             },
@@ -467,12 +473,14 @@ fun MainAppScreen(
                     repository.deleteEntry(id)
                     isAddingEntry = false
                     editingEntry = null
+                    defaultFolderForNewEntry = null
                     snackbarHostState.showSnackbar("Entry permanently removed")
                 }
             },
             onBack = {
                 isAddingEntry = false
                 editingEntry = null
+                defaultFolderForNewEntry = null
             },
             onCopyUsername = { handleCopy("Username", it) },
             onCopyPassword = { handleCopy("Password", it) }
@@ -537,7 +545,14 @@ fun MainAppScreen(
                         VaultListScreen(
                             entries = entries,
                             onEntryClick = { editingEntry = it },
-                            onAddClick = { isAddingEntry = true },
+                            onAddClick = {
+                                defaultFolderForNewEntry = null
+                                isAddingEntry = true
+                            },
+                            onAddWithFolder = { folderName ->
+                                defaultFolderForNewEntry = folderName
+                                isAddingEntry = true
+                            },
                             onLockVault = { repository.lockVault() },
                             onCopyUsername = { handleCopy("Username", it) },
                             onCopyPassword = { handleCopy("Password", it) },
