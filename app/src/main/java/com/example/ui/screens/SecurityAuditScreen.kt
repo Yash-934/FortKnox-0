@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.CutCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
@@ -40,6 +41,7 @@ import com.example.data.model.VaultEntry
 import com.example.security.PasswordGenerator
 import com.example.security.SecurityIntegrityChecker
 import com.example.ui.components.CyberBadge
+import com.example.ui.components.CyberButton
 import com.example.ui.components.CyberCard
 import com.example.ui.theme.CyberBackground
 import com.example.ui.theme.CyberBorder
@@ -57,7 +59,8 @@ import com.example.ui.theme.CyberTextSecondary
 fun SecurityAuditScreen(
     entries: List<VaultEntry>,
     integrityReport: SecurityIntegrityChecker.IntegrityReport,
-    onEntryClick: (VaultEntry) -> Unit
+    onEntryClick: (VaultEntry) -> Unit,
+    onNavigateToIntruderLogs: () -> Unit = {}
 ) {
     val weakEntries = remember(entries) {
         entries.filter {
@@ -147,6 +150,62 @@ fun SecurityAuditScreen(
                         modifier = Modifier.size(36.dp)
                     )
                 }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Intrusion & Security Logs Quick Access
+        CyberCard(
+            modifier = Modifier.fillMaxWidth(),
+            glowColor = CyberLaserRed.copy(alpha = 0.2f),
+            borderColor = CyberLaserRed.copy(alpha = 0.4f)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(androidx.compose.foundation.shape.CutCornerShape(8.dp))
+                            .background(CyberLaserRed.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CameraAlt,
+                            contentDescription = null,
+                            tint = CyberLaserRed,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Intruder & Security Logs",
+                            color = CyberTextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "View captured photos & access breach logs",
+                            color = CyberTextMuted,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                CyberButton(
+                    text = "LOGS",
+                    color = CyberLaserRed,
+                    onClick = onNavigateToIntruderLogs,
+                    modifier = Modifier.height(34.dp)
+                )
             }
         }
 

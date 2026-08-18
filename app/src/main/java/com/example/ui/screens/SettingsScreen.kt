@@ -91,6 +91,7 @@ fun SettingsScreen(
     onToggleScreenRecordingDetection: (Boolean) -> Unit = {},
     onSetPhotoTriggerThreshold: (Int) -> Unit,
     onNavigateToScanner: () -> Unit,
+    onNavigateToIntruderLogs: () -> Unit = {},
     onNavigateToAbout: () -> Unit,
     onChangeMasterPassword: (CharArray) -> Unit,
     onRotateVaultKey: (CharArray) -> Unit = {},
@@ -104,6 +105,14 @@ fun SettingsScreen(
     var showRestorePasswordDialog by remember { mutableStateOf(false) }
     
     val context = androidx.compose.ui.platform.LocalContext.current
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            android.widget.Toast.makeText(context, "Camera permission granted for intruder capture", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
 
     var pendingExportPassword by remember { mutableStateOf("") }
     var pendingExportDeviceBound by remember { mutableStateOf(false) }
@@ -353,17 +362,25 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(14.dp))
 
                 // Wrong Password Photo Trigger Threshold
-                Text(
-                    text = "Intruder Photo Trigger Threshold",
-                    color = CyberTextPrimary,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = "Silently captures front camera photo after consecutive wrong passwords",
-                    color = CyberTextMuted,
-                    fontSize = 12.sp
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Intruder Photo Trigger Threshold",
+                            color = CyberTextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "Silently captures camera photo after failed attempts",
+                            color = CyberTextMuted,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Row(
@@ -377,7 +394,16 @@ fun SettingsScreen(
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(androidx.compose.foundation.shape.CutCornerShape(8.dp))
-                                .clickable { onSetPhotoTriggerThreshold(t) },
+                                .clickable {
+                                    if (androidx.core.content.ContextCompat.checkSelfPermission(
+                                            context,
+                                            android.Manifest.permission.CAMERA
+                                        ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                                    ) {
+                                        cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                                    }
+                                    onSetPhotoTriggerThreshold(t)
+                                },
                             color = if (isSelected) CyberLaserRed.copy(alpha = 0.2f) else CyberSurfaceVariant,
                             border = androidx.compose.foundation.BorderStroke(
                                 1.dp,
@@ -394,6 +420,77 @@ fun SettingsScreen(
                             )
                         }
                     }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    CyberOutlinedButton(
+                        text = "VIEW INTRUDER LOGS & PHOTOS",
+                        color = CyberLaserRed,
+                        onClick = onNavigateToIntruderLogs,
+                        modifier = Modifier.height(34.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Autofill Framework Integration Card
+        CyberCard(
+            modifier = Modifier.fillMaxWidth(),
+            glowColor = CyberCyan.copy(alpha = 0.15f),
+            borderColor = CyberCyan.copy(alpha = 0.3f)
+        ) {
+            Column {
+                Text(
+                    text = "ANDROID AUTOFILL SERVICE INTEGRATION",
+                    color = CyberCyan,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Enable Fort Knox as your system-wide autofill provider to fill credentials in apps and web browsers with hardware encryption security.",
+                    color = CyberTextMuted,
+                    fontSize = 12.sp
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    CyberButton(
+                        text = "MANAGE AUTOFILL SETTINGS",
+                        color = CyberCyan,
+                        onClick = {
+                            try {
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                    val intent = android.content.Intent(android.provider.Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE).apply {
+                                        data = Uri.parse("package:${context.packageName}")
+                                    }
+                                    context.startActivity(intent)
+                                } else {
+                                    android.widget.Toast.makeText(context, "Autofill requires Android 8.0+", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            } catch (e: Exception) {
+                                try {
+                                    // Fallback to system autofill / input settings
+                                    val fallbackIntent = android.content.Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS)
+                                    context.startActivity(fallbackIntent)
+                                } catch (_: Exception) {
+                                    android.widget.Toast.makeText(context, "Open Settings > System > Autofill Service", android.widget.Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        },
+                        modifier = Modifier.height(34.dp)
+                    )
                 }
             }
         }

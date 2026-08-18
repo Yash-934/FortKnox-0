@@ -120,6 +120,7 @@ fun MainAppScreen(
     var isCryptoBusy by remember { mutableStateOf(false) }
     var rootWarningDismissed by remember { mutableStateOf(false) }
     var showScannerScreen by remember { mutableStateOf(false) }
+    var showIntruderLogsScreen by remember { mutableStateOf(false) }
     var showAboutScreen by remember { mutableStateOf(false) }
     var isDecoyModeActive by remember { mutableStateOf(false) }
 
@@ -433,6 +434,18 @@ fun MainAppScreen(
         return
     }
 
+    if (showIntruderLogsScreen) {
+        IntruderLogsScreen(
+            logs = intrusionLogs,
+            config = config,
+            onDecryptPhoto = { repository.decryptPhotoBytes(it) },
+            onDeleteLog = { id -> scope.launch { repository.deleteIntrusionLog(id) } },
+            onClearAllLogs = { scope.launch { repository.clearIntrusionLogs() } },
+            onBack = { showIntruderLogsScreen = false }
+        )
+        return
+    }
+
     if (showAboutScreen) {
         AboutScreen(onBack = { showAboutScreen = false })
         return
@@ -546,7 +559,8 @@ fun MainAppScreen(
                         SecurityAuditScreen(
                             entries = entries,
                             integrityReport = integrityReport,
-                            onEntryClick = { editingEntry = it }
+                            onEntryClick = { editingEntry = it },
+                            onNavigateToIntruderLogs = { showIntruderLogsScreen = true }
                         )
                     }
 
@@ -591,6 +605,9 @@ fun MainAppScreen(
                             },
                             onNavigateToScanner = {
                                 showScannerScreen = true
+                            },
+                            onNavigateToIntruderLogs = {
+                                showIntruderLogsScreen = true
                             },
                             onNavigateToAbout = {
                                 showAboutScreen = true

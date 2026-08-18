@@ -187,6 +187,10 @@ class VaultRepository(
         }
     }
 
+    suspend fun deleteIntrusionLog(id: Long) = withContext(Dispatchers.IO) {
+        intrusionLogDao.deleteLogById(id)
+    }
+
     suspend fun clearIntrusionLogs() = withContext(Dispatchers.IO) {
         intrusionLogDao.shredPhotos()
         intrusionLogDao.clearAllLogs()
@@ -461,8 +465,8 @@ class VaultRepository(
      * When Paranoid 2FA is active, direct biometric-only unlock is rejected.
      */
     suspend fun unlockWithBiometrics(cipher: Cipher): Result<Unit> = withContext(Dispatchers.Default) {
+        val config = preferences.configFlow.first()
         try {
-            val config = preferences.configFlow.first()
             if (config.isParanoid2FaEnabled) {
                 return@withContext Result.failure(IllegalStateException("Paranoid 2FA mode is active: Master PIN/Password is required as First Factor."))
             }
@@ -477,6 +481,14 @@ class VaultRepository(
 
             Result.success(Unit)
         } catch (e: Exception) {
+            val attempts = preferences.incrementFailedAttempts()
+            val threshold = config.photoTriggerThreshold
+            if (attempts >= threshold) {
+                val photoBytes = com.example.security.SilentCameraCapture.capturePhotoSilently(context)
+                recordWrongPasswordAttempt(attempts, photoBytes, "Failed biometric authentication #$attempts")
+            } else {
+                recordWrongPasswordAttempt(attempts, null, "Failed biometric authentication #$attempts")
+            }
             Result.failure(e)
         }
     }

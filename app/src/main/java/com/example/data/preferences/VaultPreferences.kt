@@ -53,7 +53,7 @@ class VaultPreferences(private val context: Context) {
         val isDisguiseMode: Boolean = false,
         val decoyType: String = "NOTES", // "NOTES" or "CALCULATOR"
         val isPrivacyProtectionEnabled: Boolean = true,
-        val photoTriggerThreshold: Int = 2,
+        val photoTriggerThreshold: Int = 3,
         val isParanoid2FaEnabled: Boolean = false,
         val isDeviceBoundBackup: Boolean = false,
         val isPeriodicRootCheckEnabled: Boolean = true,
@@ -76,7 +76,7 @@ class VaultPreferences(private val context: Context) {
             isDisguiseMode = prefs[KEY_DISGUISE_MODE] ?: false,
             decoyType = prefs[KEY_DECOY_TYPE] ?: "NOTES",
             isPrivacyProtectionEnabled = prefs[KEY_PRIVACY_PROTECTION] ?: true,
-            photoTriggerThreshold = prefs[KEY_PHOTO_TRIGGER_THRESHOLD] ?: 2,
+            photoTriggerThreshold = prefs[KEY_PHOTO_TRIGGER_THRESHOLD] ?: 3,
             isParanoid2FaEnabled = prefs[KEY_PARANOID_2FA] ?: false,
             isDeviceBoundBackup = prefs[KEY_DEVICE_BOUND_BACKUP] ?: false,
             isPeriodicRootCheckEnabled = prefs[KEY_PERIODIC_ROOT_CHECK] ?: true,
