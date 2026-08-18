@@ -48,6 +48,238 @@ class VaultAutofillService : AutofillService() {
 
     companion object {
         private const val TAG = "VaultAutofillService"
+
+        fun createDatasetPresentation(context: android.content.Context, title: String, subtitle: String): RemoteViews {
+            return try {
+                RemoteViews(context.packageName, R.layout.autofill_dataset_item).apply {
+                    setTextViewText(R.id.autofill_title, "🛡️ $title")
+                    setTextViewText(R.id.autofill_subtitle, subtitle)
+                }
+            } catch (_: Exception) {
+                RemoteViews(context.packageName, android.R.layout.simple_list_item_2).apply {
+                    setTextViewText(android.R.id.text1, "🛡️ $title")
+                    setTextViewText(android.R.id.text2, subtitle)
+                }
+            }
+        }
+
+        fun createAuthPresentation(context: android.content.Context): RemoteViews {
+            return try {
+                RemoteViews(context.packageName, R.layout.autofill_auth_item).apply {
+                    setTextViewText(R.id.autofill_auth_title, "🛡️ Unlock Fort Knox to Autofill")
+                    setTextViewText(R.id.autofill_auth_subtitle, "Tap to enter PIN or biometric unlock")
+                }
+            } catch (_: Exception) {
+                RemoteViews(context.packageName, android.R.layout.simple_list_item_1).apply {
+                    setTextViewText(android.R.id.text1, "🛡️ Unlock Fort Knox to Autofill")
+                }
+            }
+        }
+
+        fun sanitizeTitle(domain: String?, pkg: String?): String {
+            if (!domain.isNullOrBlank()) {
+                val clean = domain.removePrefix("https://")
+                    .removePrefix("http://")
+                    .removePrefix("www.")
+                    .substringBefore("/")
+                    .substringBefore(":")
+                if (clean.contains("github")) return "GitHub"
+                if (clean.contains("google") || clean.contains("accounts.google")) return "Google"
+                if (clean.contains("amazon") || clean.contains("aws.")) return "Amazon / AWS"
+                if (clean.contains("netflix")) return "Netflix"
+                if (clean.contains("twitter") || clean.contains("x.com")) return "X / Twitter"
+                if (clean.contains("reddit")) return "Reddit"
+                if (clean.contains("facebook")) return "Facebook"
+                if (clean.contains("instagram")) return "Instagram"
+                if (clean.contains("linkedin")) return "LinkedIn"
+                if (clean.contains("microsoft") || clean.contains("live.com")) return "Microsoft"
+                return if (clean.isNotEmpty()) clean[0].uppercaseChar() + clean.substring(1) else clean
+            }
+            if (!pkg.isNullOrBlank()) {
+                val simple = pkg.substringAfterLast(".")
+                return (if (simple.isNotEmpty()) simple[0].uppercaseChar() + simple.substring(1) else simple) + " App"
+            }
+            return "Saved Login"
+        }
+
+        fun sanitizeFolder(domain: String?, pkg: String?): String {
+            val target = (domain ?: pkg ?: "").lowercase()
+            return when {
+                target.contains("github") -> "GitHub"
+                target.contains("google") -> "Google"
+                target.contains("amazon") || target.contains("aws") -> "AWS Cloud"
+                target.contains("netflix") || target.contains("spotify") || target.contains("youtube") -> "Entertainment"
+                target.contains("binance") || target.contains("crypto") || target.contains("coinbase") -> "Crypto"
+                target.contains("bank") || target.contains("chase") || target.contains("paypal") -> "Finance"
+                else -> ""
+            }
+        }
+
+        /**
+         * Traverses the complete AssistStructure and virtual node tree (Chrome/WebView).
+         * Extracts username/email/password AutofillIds and active values using multi-signal heuristics.
+         */
+        fun parseStructure(structure: AssistStructure): ParsedFields {
+            val parsed = ParsedFields()
+            try {
+                parsed.packageName = structure.activityComponent?.packageName
+            } catch (_: Exception) {}
+
+            val queue = ArrayDeque<AssistStructure.ViewNode>()
+            for (i in 0 until structure.windowNodeCount) {
+                val windowNode = structure.getWindowNodeAt(i)
+                queue.add(windowNode.rootViewNode)
+            }
+
+            var previousTextInputNode: AssistStructure.ViewNode? = null
+
+            while (!queue.isEmpty()) {
+                val node = queue.poll() ?: continue
+
+                // 1. Web Domain extraction
+                if (parsed.webDomain.isNullOrBlank() && !node.webDomain.isNullOrBlank()) {
+                    parsed.webDomain = node.webDomain
+                }
+
+                val autofillId = node.autofillId
+                val hints = node.autofillHints?.map { it.lowercase() }
+                val hintText = node.hint?.toString()?.lowercase() ?: ""
+                val idEntry = node.idEntry?.lowercase() ?: ""
+                val contentDesc = node.contentDescription?.toString()?.lowercase() ?: ""
+                val inputType = node.inputType
+                val className = node.className?.lowercase() ?: ""
+                val nodeValue = node.autofillValue?.textValue?.toString()
+                    ?: node.text?.toString()
+
+                var isPassword = false
+                var isUsername = false
+
+                // 2. Check HTML Attributes (WebView / Chrome)
+                val htmlInfo = node.htmlInfo
+                if (htmlInfo != null) {
+                    htmlInfo.attributes?.forEach { attrPair ->
+                        val lowerName = attrPair.first?.lowercase() ?: ""
+                        val lowerVal = attrPair.second?.lowercase() ?: ""
+
+                        if (lowerName == "autocomplete") {
+                            if (lowerVal.contains("username") || lowerVal.contains("email")) {
+                                isUsername = true
+                            }
+                            if (lowerVal.contains("password") || lowerVal.contains("current-password") || lowerVal.contains("new-password")) {
+                                isPassword = true
+                            }
+                        }
+
+                        if (lowerName == "type") {
+                            if (lowerVal == "password") {
+                                isPassword = true
+                            }
+                        }
+
+                        if (lowerName in listOf("name", "id", "placeholder", "aria-label", "aria-labelledby")) {
+                            if (lowerVal.contains("pass") || lowerVal.contains("pwd") || lowerVal.contains("secret") || lowerVal.contains("pin")) {
+                                isPassword = true
+                            }
+                            if (lowerVal.contains("user") || lowerVal.contains("email") || lowerVal.contains("login") || lowerVal.contains("account") || lowerVal.contains("identifier")) {
+                                isUsername = true
+                            }
+                        }
+                    }
+                }
+
+                // 3. Check InputType Variations
+                val textVariation = inputType and InputType.TYPE_MASK_VARIATION
+                val isTextClass = (inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT
+                val isNumberClass = (inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_NUMBER
+
+                if (isTextClass) {
+                    if (textVariation == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
+                        textVariation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD ||
+                        textVariation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
+                    ) {
+                        isPassword = true
+                    }
+                    if (textVariation == InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS ||
+                        textVariation == InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS ||
+                        textVariation == InputType.TYPE_TEXT_VARIATION_PERSON_NAME
+                    ) {
+                        isUsername = true
+                    }
+                } else if (isNumberClass && (inputType and InputType.TYPE_NUMBER_VARIATION_PASSWORD != 0)) {
+                    isPassword = true
+                }
+
+                // 4. Check Autofill Hints
+                if (hints != null) {
+                    if (hints.contains(View.AUTOFILL_HINT_PASSWORD.lowercase()) ||
+                        hints.contains("new_password") ||
+                        hints.contains("current_password") ||
+                        hints.contains("password")
+                    ) {
+                        isPassword = true
+                    }
+                    if (hints.contains(View.AUTOFILL_HINT_USERNAME.lowercase()) ||
+                        hints.contains(View.AUTOFILL_HINT_EMAIL_ADDRESS.lowercase()) ||
+                        hints.contains(View.AUTOFILL_HINT_NAME.lowercase()) ||
+                        hints.contains("email") ||
+                        hints.contains("username") ||
+                        hints.contains("login")
+                    ) {
+                        isUsername = true
+                    }
+                }
+
+                // 5. Check Resource ID, Hint, and Content Description Strings
+                val combinedTextMeta = "$idEntry $hintText $contentDesc"
+                if (combinedTextMeta.contains("password") || combinedTextMeta.contains("pass") || combinedTextMeta.contains("pwd") || combinedTextMeta.contains("secret")) {
+                    isPassword = true
+                }
+                if (combinedTextMeta.contains("username") || combinedTextMeta.contains("user") || combinedTextMeta.contains("email") ||
+                    combinedTextMeta.contains("login") || combinedTextMeta.contains("account") || combinedTextMeta.contains("identifier")
+                ) {
+                    isUsername = true
+                }
+
+                // 6. Proximity Heuristic
+                if (isPassword && parsed.usernameId == null && previousTextInputNode != null) {
+                    parsed.usernameId = previousTextInputNode.autofillId
+                    val prevVal = previousTextInputNode.autofillValue?.textValue?.toString()
+                        ?: previousTextInputNode.text?.toString()
+                    if (!prevVal.isNullOrBlank()) {
+                        parsed.usernameValue = prevVal
+                    }
+                }
+
+                // 7. Record matches
+                if (autofillId != null) {
+                    if (isPassword) {
+                        parsed.allCandidatePassIds.add(autofillId)
+                        if (parsed.passwordId == null) {
+                            parsed.passwordId = autofillId
+                        }
+                        if (!nodeValue.isNullOrBlank()) {
+                            parsed.passwordValue = nodeValue
+                        }
+                    } else if (isUsername) {
+                        parsed.allCandidateUserIds.add(autofillId)
+                        if (parsed.usernameId == null) {
+                            parsed.usernameId = autofillId
+                        }
+                        if (!nodeValue.isNullOrBlank()) {
+                            parsed.usernameValue = nodeValue
+                        }
+                    } else if (isTextClass || className.contains("edittext") || className.contains("input")) {
+                        previousTextInputNode = node
+                    }
+                }
+
+                for (j in 0 until node.childCount) {
+                    queue.add(node.getChildAt(j))
+                }
+            }
+
+            return parsed
+        }
     }
 
     data class ParsedFields(
@@ -108,18 +340,19 @@ class VaultAutofillService : AutofillService() {
                 if (!isUnlocked) {
                     AutofillLogger.log(applicationContext, "onFillRequest LOCKED", "Vault is locked. Setting authentication prompt.")
                     
-                    val intent = Intent(applicationContext, MainActivity::class.java).apply {
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                        putExtra("AUTOFILL_AUTH_REQUEST", true)
+                    val authIntent = Intent(applicationContext, AutofillAuthActivity::class.java).apply {
+                        putExtra("EXTRA_DOMAIN", parsed.webDomain)
+                        putExtra("EXTRA_PACKAGE", parsed.packageName)
+                        putExtra("EXTRA_MODE", "FILL")
                     }
                     val pendingIntent = PendingIntent.getActivity(
                         applicationContext,
                         1001,
-                        intent,
+                        authIntent,
                         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_CANCEL_CURRENT
                     )
 
-                    val authPresentation = createAuthPresentation()
+                    val authPresentation = createAuthPresentation(applicationContext)
                     val authIds = listOfNotNull(parsed.usernameId, parsed.passwordId).toTypedArray()
                     if (authIds.isNotEmpty()) {
                         responseBuilder.setAuthentication(
@@ -150,7 +383,7 @@ class VaultAutofillService : AutofillService() {
 
                     for (entry in matched) {
                         val datasetBuilder = Dataset.Builder()
-                        val presentation = createDatasetPresentation(entry.title, entry.username.ifBlank { "Fort Knox Vault" })
+                        val presentation = createDatasetPresentation(applicationContext, entry.title, entry.username.ifBlank { "Fort Knox Vault" })
 
                         var hasValue = false
                         parsed.usernameId?.let { uId ->
@@ -241,10 +474,10 @@ class VaultAutofillService : AutofillService() {
         serviceScope.launch {
             try {
                 val repository = VaultRepository(applicationContext)
-                if (repository.isUnlocked.value) {
-                    val candidateTitle = sanitizeTitle(parsed.webDomain, parsed.packageName)
-                    val candidateFolder = sanitizeFolder(parsed.webDomain, parsed.packageName)
+                val candidateTitle = sanitizeTitle(parsed.webDomain, parsed.packageName)
+                val candidateFolder = sanitizeFolder(parsed.webDomain, parsed.packageName)
 
+                if (repository.isUnlocked.value) {
                     val entry = VaultEntry(
                         title = candidateTitle,
                         username = username,
@@ -257,7 +490,16 @@ class VaultAutofillService : AutofillService() {
                     repository.saveEntry(entry)
                     AutofillLogger.log(applicationContext, "onSaveRequest SAVED", "Encrypted credentials for $candidateTitle.")
                 } else {
-                    AutofillLogger.log(applicationContext, "onSaveRequest LOCKED", "Vault locked. Skipping direct plaintext storage.")
+                    AutofillLogger.log(applicationContext, "onSaveRequest LOCKED", "Vault locked. Launching AutofillAuthActivity to confirm save.")
+                    val saveIntent = Intent(applicationContext, AutofillAuthActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        putExtra("EXTRA_MODE", "SAVE")
+                        putExtra("EXTRA_DOMAIN", parsed.webDomain)
+                        putExtra("EXTRA_PACKAGE", parsed.packageName)
+                        putExtra("EXTRA_SAVE_USER", username)
+                        putExtra("EXTRA_SAVE_PASS", password)
+                    }
+                    applicationContext.startActivity(saveIntent)
                 }
                 callback.onSuccess()
             } catch (e: Exception) {
@@ -266,245 +508,5 @@ class VaultAutofillService : AutofillService() {
                 callback.onFailure(e.message)
             }
         }
-    }
-
-    private fun sanitizeTitle(domain: String?, pkg: String?): String {
-        if (!domain.isNullOrBlank()) {
-            val clean = domain.removePrefix("https://")
-                .removePrefix("http://")
-                .removePrefix("www.")
-                .substringBefore("/")
-                .substringBefore(":")
-            if (clean.contains("github")) return "GitHub"
-            if (clean.contains("google") || clean.contains("accounts.google")) return "Google"
-            if (clean.contains("amazon") || clean.contains("aws.")) return "Amazon / AWS"
-            if (clean.contains("netflix")) return "Netflix"
-            if (clean.contains("twitter") || clean.contains("x.com")) return "X / Twitter"
-            if (clean.contains("reddit")) return "Reddit"
-            if (clean.contains("facebook")) return "Facebook"
-            if (clean.contains("instagram")) return "Instagram"
-            if (clean.contains("linkedin")) return "LinkedIn"
-            if (clean.contains("microsoft") || clean.contains("live.com")) return "Microsoft"
-            return clean.capitalizeFirstLetter()
-        }
-        if (!pkg.isNullOrBlank()) {
-            val simple = pkg.substringAfterLast(".").capitalizeFirstLetter()
-            return "$simple App"
-        }
-        return "Saved Login"
-    }
-
-    private fun sanitizeFolder(domain: String?, pkg: String?): String {
-        val target = (domain ?: pkg ?: "").lowercase()
-        return when {
-            target.contains("github") -> "GitHub"
-            target.contains("google") -> "Google"
-            target.contains("amazon") || target.contains("aws") -> "AWS Cloud"
-            target.contains("netflix") || target.contains("spotify") || target.contains("youtube") -> "Entertainment"
-            target.contains("binance") || target.contains("crypto") || target.contains("coinbase") -> "Crypto"
-            target.contains("bank") || target.contains("chase") || target.contains("paypal") -> "Finance"
-            else -> ""
-        }
-    }
-
-    private fun String.capitalizeFirstLetter(): String {
-        return if (isNotEmpty()) this[0].uppercaseChar() + substring(1) else this
-    }
-
-    private fun createDatasetPresentation(title: String, subtitle: String): RemoteViews {
-        return try {
-            RemoteViews(packageName, R.layout.autofill_dataset_item).apply {
-                setTextViewText(R.id.autofill_title, "🛡️ $title")
-                setTextViewText(R.id.autofill_subtitle, subtitle)
-            }
-        } catch (_: Exception) {
-            RemoteViews(packageName, android.R.layout.simple_list_item_2).apply {
-                setTextViewText(android.R.id.text1, "🛡️ $title")
-                setTextViewText(android.R.id.text2, subtitle)
-            }
-        }
-    }
-
-    private fun createAuthPresentation(): RemoteViews {
-        return try {
-            RemoteViews(packageName, R.layout.autofill_auth_item).apply {
-                setTextViewText(R.id.autofill_auth_title, "🛡️ Unlock Fort Knox to Autofill")
-                setTextViewText(R.id.autofill_auth_subtitle, "Tap to enter PIN or biometric unlock")
-            }
-        } catch (_: Exception) {
-            RemoteViews(packageName, android.R.layout.simple_list_item_1).apply {
-                setTextViewText(android.R.id.text1, "🛡️ Unlock Fort Knox to Autofill")
-            }
-        }
-    }
-
-    /**
-     * Traverses the complete AssistStructure and virtual node tree (Chrome/WebView).
-     * Extracts username/email/password AutofillIds and active values using multi-signal heuristics.
-     */
-    private fun parseStructure(structure: AssistStructure): ParsedFields {
-        val parsed = ParsedFields()
-        try {
-            parsed.packageName = structure.activityComponent?.packageName
-        } catch (_: Exception) {}
-
-        val queue = ArrayDeque<AssistStructure.ViewNode>()
-        for (i in 0 until structure.windowNodeCount) {
-            val windowNode = structure.getWindowNodeAt(i)
-            queue.add(windowNode.rootViewNode)
-        }
-
-        var previousTextInputNode: AssistStructure.ViewNode? = null
-
-        while (!queue.isEmpty()) {
-            val node = queue.poll() ?: continue
-
-            // 1. Web Domain extraction
-            if (parsed.webDomain.isNullOrBlank() && !node.webDomain.isNullOrBlank()) {
-                parsed.webDomain = node.webDomain
-            }
-
-            val autofillId = node.autofillId
-            val hints = node.autofillHints?.map { it.lowercase() }
-            val hintText = node.hint?.toString()?.lowercase() ?: ""
-            val idEntry = node.idEntry?.lowercase() ?: ""
-            val contentDesc = node.contentDescription?.toString()?.lowercase() ?: ""
-            val inputType = node.inputType
-            val className = node.className?.lowercase() ?: ""
-            val nodeValue = node.autofillValue?.textValue?.toString()
-                ?: node.text?.toString()
-
-            var isPassword = false
-            var isUsername = false
-
-            // 2. Check HTML Attributes (WebView / Chrome)
-            val htmlInfo = node.htmlInfo
-            if (htmlInfo != null) {
-                htmlInfo.attributes?.forEach { attrPair ->
-                    val lowerName = attrPair.first?.lowercase() ?: ""
-                    val lowerVal = attrPair.second?.lowercase() ?: ""
-
-                    if (lowerName == "autocomplete") {
-                        if (lowerVal.contains("username") || lowerVal.contains("email")) {
-                            isUsername = true
-                        }
-                        if (lowerVal.contains("password") || lowerVal.contains("current-password") || lowerVal.contains("new-password")) {
-                            isPassword = true
-                        }
-                    }
-
-                    if (lowerName == "type") {
-                        if (lowerVal == "password") {
-                            isPassword = true
-                        } else if (lowerVal == "email" || lowerVal == "text" || lowerVal == "tel") {
-                            // Checked with other id/name indicators
-                        }
-                    }
-
-                    if (lowerName in listOf("name", "id", "placeholder", "aria-label", "aria-labelledby")) {
-                        if (lowerVal.contains("pass") || lowerVal.contains("pwd") || lowerVal.contains("secret") || lowerVal.contains("pin")) {
-                            isPassword = true
-                        }
-                        if (lowerVal.contains("user") || lowerVal.contains("email") || lowerVal.contains("login") || lowerVal.contains("account") || lowerVal.contains("identifier")) {
-                            isUsername = true
-                        }
-                    }
-                }
-            }
-
-            // 3. Check InputType Variations
-            val textVariation = inputType and InputType.TYPE_MASK_VARIATION
-            val isTextClass = (inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT
-            val isNumberClass = (inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_NUMBER
-
-            if (isTextClass) {
-                if (textVariation == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
-                    textVariation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD ||
-                    textVariation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
-                ) {
-                    isPassword = true
-                }
-                if (textVariation == InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS ||
-                    textVariation == InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS ||
-                    textVariation == InputType.TYPE_TEXT_VARIATION_PERSON_NAME
-                ) {
-                    isUsername = true
-                }
-            } else if (isNumberClass && (inputType and InputType.TYPE_NUMBER_VARIATION_PASSWORD != 0)) {
-                isPassword = true
-            }
-
-            // 4. Check Autofill Hints
-            if (hints != null) {
-                if (hints.contains(View.AUTOFILL_HINT_PASSWORD.lowercase()) ||
-                    hints.contains("new_password") ||
-                    hints.contains("current_password") ||
-                    hints.contains("password")
-                ) {
-                    isPassword = true
-                }
-                if (hints.contains(View.AUTOFILL_HINT_USERNAME.lowercase()) ||
-                    hints.contains(View.AUTOFILL_HINT_EMAIL_ADDRESS.lowercase()) ||
-                    hints.contains(View.AUTOFILL_HINT_NAME.lowercase()) ||
-                    hints.contains("email") ||
-                    hints.contains("username") ||
-                    hints.contains("login")
-                ) {
-                    isUsername = true
-                }
-            }
-
-            // 5. Check Resource ID, Hint, and Content Description Strings
-            val combinedTextMeta = "$idEntry $hintText $contentDesc"
-            if (combinedTextMeta.contains("password") || combinedTextMeta.contains("pass") || combinedTextMeta.contains("pwd") || combinedTextMeta.contains("secret")) {
-                isPassword = true
-            }
-            if (combinedTextMeta.contains("username") || combinedTextMeta.contains("user") || combinedTextMeta.contains("email") ||
-                combinedTextMeta.contains("login") || combinedTextMeta.contains("account") || combinedTextMeta.contains("identifier")
-            ) {
-                isUsername = true
-            }
-
-            // 6. Proximity Heuristic: If we found a password field and haven't found a username field,
-            // check the immediately preceding text input node
-            if (isPassword && parsed.usernameId == null && previousTextInputNode != null) {
-                parsed.usernameId = previousTextInputNode.autofillId
-                val prevVal = previousTextInputNode.autofillValue?.textValue?.toString()
-                    ?: previousTextInputNode.text?.toString()
-                if (!prevVal.isNullOrBlank()) {
-                    parsed.usernameValue = prevVal
-                }
-            }
-
-            // 7. Record matches
-            if (autofillId != null) {
-                if (isPassword) {
-                    parsed.allCandidatePassIds.add(autofillId)
-                    if (parsed.passwordId == null) {
-                        parsed.passwordId = autofillId
-                    }
-                    if (!nodeValue.isNullOrBlank()) {
-                        parsed.passwordValue = nodeValue
-                    }
-                } else if (isUsername) {
-                    parsed.allCandidateUserIds.add(autofillId)
-                    if (parsed.usernameId == null) {
-                        parsed.usernameId = autofillId
-                    }
-                    if (!nodeValue.isNullOrBlank()) {
-                        parsed.usernameValue = nodeValue
-                    }
-                } else if (isTextClass || className.contains("edittext") || className.contains("input")) {
-                    previousTextInputNode = node
-                }
-            }
-
-            // Enqueue all children
-            for (j in 0 until node.childCount) {
-                queue.add(node.getChildAt(j))
-            }
-        }
-
-        return parsed
     }
 }
