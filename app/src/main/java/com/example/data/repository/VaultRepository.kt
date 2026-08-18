@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -48,9 +49,12 @@ class VaultRepository(
     val intrusionLogsFlow: Flow<List<IntrusionLogEntity>> = intrusionLogDao.getAllLogs()
     val decoyNotesFlow: Flow<List<DecoyNoteEntity>> = decoyNoteDao.getAllNotes()
 
-    val entriesFlow: Flow<List<VaultEntry>> = vaultDao.getAllEntries().map { entities ->
+    val entriesFlow: Flow<List<VaultEntry>> = combine(
+        vaultDao.getAllEntries(),
+        _isUnlocked
+    ) { entities, unlocked ->
         val currentDek = activeDek
-        if (currentDek == null) {
+        if (!unlocked || currentDek == null) {
             emptyList()
         } else {
             entities.mapNotNull { entity ->
