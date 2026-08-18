@@ -76,6 +76,52 @@ class VaultAutofillService : AutofillService() {
             }
         }
 
+        fun createInlineAuthPresentation(
+            context: android.content.Context,
+            inlineRequest: android.view.inputmethod.InlineSuggestionsRequest?,
+            pendingIntent: PendingIntent
+        ): android.service.autofill.InlinePresentation? {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || inlineRequest == null) return null
+            return try {
+                val specs = inlineRequest.inlinePresentationSpecs
+                if (specs.isEmpty()) return null
+                val spec = specs[0]
+                val content = androidx.autofill.inline.v1.InlineSuggestionUi.newContentBuilder(pendingIntent)
+                    .setTitle("🛡️ Fort Knox")
+                    .setSubtitle("Tap to Unlock & Autofill")
+                    .build()
+                android.service.autofill.InlinePresentation(content.slice, spec, true)
+            } catch (e: Exception) {
+                AutofillLogger.log(context, "createInlineAuthPresentation", e.message ?: "")
+                null
+            }
+        }
+
+        fun createInlineDatasetPresentation(
+            context: android.content.Context,
+            inlineRequest: android.view.inputmethod.InlineSuggestionsRequest?,
+            title: String,
+            subtitle: String,
+            pendingIntent: PendingIntent,
+            index: Int = 0
+        ): android.service.autofill.InlinePresentation? {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || inlineRequest == null) return null
+            return try {
+                val specs = inlineRequest.inlinePresentationSpecs
+                if (specs.isEmpty()) return null
+                val specIndex = index.coerceAtMost(specs.size - 1)
+                val spec = specs[specIndex]
+                val content = androidx.autofill.inline.v1.InlineSuggestionUi.newContentBuilder(pendingIntent)
+                    .setTitle(title)
+                    .setSubtitle(subtitle)
+                    .build()
+                android.service.autofill.InlinePresentation(content.slice, spec, false)
+            } catch (e: Exception) {
+                AutofillLogger.log(context, "createInlineDatasetPresentation", e.message ?: "")
+                null
+            }
+        }
+
         fun sanitizeTitle(domain: String?, pkg: String?): String {
             if (!domain.isNullOrBlank()) {
                 val clean = domain.removePrefix("https://")
@@ -380,13 +426,27 @@ class VaultAutofillService : AutofillService() {
                     )
 
                     val authPresentation = createAuthPresentation(applicationContext)
+                    val inlineRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        request.inlineSuggestionsRequest
+                    } else null
+                    val inlineAuth = createInlineAuthPresentation(applicationContext, inlineRequest, pendingIntent)
+
                     val authIds = listOfNotNull(parsed.usernameId, parsed.passwordId).toTypedArray()
                     if (authIds.isNotEmpty()) {
-                        responseBuilder.setAuthentication(
-                            authIds,
-                            pendingIntent.intentSender,
-                            authPresentation
-                        )
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && inlineAuth != null) {
+                            responseBuilder.setAuthentication(
+                                authIds,
+                                pendingIntent.intentSender,
+                                authPresentation,
+                                inlineAuth
+                            )
+                        } else {
+                            responseBuilder.setAuthentication(
+                                authIds,
+                                pendingIntent.intentSender,
+                                authPresentation
+                            )
+                        }
                     }
                 } else {
                     // Vault is unlocked - query stored credentials
@@ -408,22 +468,57 @@ class VaultAutofillService : AutofillService() {
 
                     AutofillLogger.log(applicationContext, "onFillRequest UNLOCKED", "Found ${matched.size} matching credentials.")
 
+                    val inlineRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        request.inlineSuggestionsRequest
+                    } else null
+
+                    // Dummy intent for inline presentation chip attribution
+                    val dummyIntent = PendingIntent.getActivity(
+                        applicationContext,
+                        0,
+                        Intent(applicationContext, MainActivity::class.java),
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+                    )
+
+                    var dsIdx = 0
                     for (entry in matched) {
                         val datasetBuilder = Dataset.Builder()
                         val presentation = createDatasetPresentation(applicationContext, entry.title, entry.username.ifBlank { "Fort Knox Vault" })
+                        val inlineDataset = createInlineDatasetPresentation(
+                            applicationContext,
+                            inlineRequest,
+                            entry.title,
+                            entry.username.ifBlank { "Fort Knox Login" },
+                            dummyIntent,
+                            dsIdx++
+                        )
 
                         var hasValue = false
-                        parsed.usernameId?.let { uId ->
-                            if (entry.username.isNotBlank()) {
-                                datasetBuilder.setValue(uId, AutofillValue.forText(entry.username), presentation)
-                                hasValue = true
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && inlineDataset != null) {
+                            parsed.usernameId?.let { uId ->
+                                if (entry.username.isNotBlank()) {
+                                    datasetBuilder.setValue(uId, AutofillValue.forText(entry.username), presentation, inlineDataset)
+                                    hasValue = true
+                                }
                             }
-                        }
-
-                        parsed.passwordId?.let { pId ->
-                            if (entry.password.isNotBlank()) {
-                                datasetBuilder.setValue(pId, AutofillValue.forText(entry.password), presentation)
-                                hasValue = true
+                            parsed.passwordId?.let { pId ->
+                                if (entry.password.isNotBlank()) {
+                                    datasetBuilder.setValue(pId, AutofillValue.forText(entry.password), presentation, inlineDataset)
+                                    hasValue = true
+                                }
+                            }
+                        } else {
+                            parsed.usernameId?.let { uId ->
+                                if (entry.username.isNotBlank()) {
+                                    datasetBuilder.setValue(uId, AutofillValue.forText(entry.username), presentation)
+                                    hasValue = true
+                                }
+                            }
+                            parsed.passwordId?.let { pId ->
+                                if (entry.password.isNotBlank()) {
+                                    datasetBuilder.setValue(pId, AutofillValue.forText(entry.password), presentation)
+                                    hasValue = true
+                                }
                             }
                         }
 

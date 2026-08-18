@@ -46,8 +46,10 @@ bouncycastle = "1.78.1"
 securityCrypto = "1.1.0-alpha06"
 sqlcipher = "4.5.4"
 sqliteKtx = "2.4.0"
+androidxAutofill = "1.1.0"
 
 [libraries]
+androidx-autofill = { group = "androidx.autofill", name = "autofill", version.ref = "androidxAutofill" }
 sqlcipher = { group = "net.zetetic", name = "android-database-sqlcipher", version.ref = "sqlcipher" }
 sqlite-ktx = { group = "androidx.sqlite", name = "sqlite-ktx", version.ref = "sqliteKtx" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }

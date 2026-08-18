@@ -110,6 +110,7 @@ dependencies {
   implementation(libs.sqlcipher)
   implementation(libs.sqlite.ktx)
   implementation(libs.androidx.biometric)
+  implementation(libs.androidx.autofill)
   implementation(libs.bouncycastle.prov)
   implementation(libs.androidx.security.crypto)
   implementation(libs.converter.moshi)
