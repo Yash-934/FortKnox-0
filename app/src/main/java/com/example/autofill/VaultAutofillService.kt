@@ -34,12 +34,12 @@ import java.util.ArrayDeque
 /**
  * Production-Grade Android Autofill Framework Service for Fort Knox Password Manager.
  *
- * Implements comprehensive OS-level autofill provider integration supporting:
- * - Aggressive AssistStructure & HtmlInfo traversing for native apps, Chrome, Edge, Brave, and WebViews.
- * - Multi-signal detection: Autofill hints, InputType variations, Resource IDs, View IDs, and HTML attributes.
- * - Always-active SaveInfo registration so "Save to Fort Knox" dialog appears across all apps and browsers.
- * - Dual-field Dataset generation (filling both username and password simultaneously).
- * - Locked vault authentication workflow and detailed telemetry logging.
+ * Provides rock-solid OS-level autofill provider integration supporting:
+ * - Robust recursive AssistStructure & HtmlInfo traversal across DuckDuckGo, Chrome, Edge, Brave, and WebViews.
+ * - Multi-signal heuristics: Autofill Hints, InputType variations, HTML attributes, resource IDs, and proximity.
+ * - Reliable authentication-gated and unlocked Dataset presentations.
+ * - System SaveInfo registration for automatic credential capture.
+ * - Comprehensive sanitized diagnostic telemetry logging.
  */
 @RequiresApi(Build.VERSION_CODES.O)
 class VaultAutofillService : AutofillService() {
@@ -73,52 +73,6 @@ class VaultAutofillService : AutofillService() {
                 RemoteViews(context.packageName, android.R.layout.simple_list_item_1).apply {
                     setTextViewText(android.R.id.text1, "🛡️ Unlock Fort Knox to Autofill")
                 }
-            }
-        }
-
-        fun createInlineAuthPresentation(
-            context: android.content.Context,
-            inlineRequest: android.view.inputmethod.InlineSuggestionsRequest?,
-            pendingIntent: PendingIntent
-        ): android.service.autofill.InlinePresentation? {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || inlineRequest == null) return null
-            return try {
-                val specs = inlineRequest.inlinePresentationSpecs
-                if (specs.isEmpty()) return null
-                val spec = specs[0]
-                val content = androidx.autofill.inline.v1.InlineSuggestionUi.newContentBuilder(pendingIntent)
-                    .setTitle("🛡️ Fort Knox")
-                    .setSubtitle("Tap to Unlock & Autofill")
-                    .build()
-                android.service.autofill.InlinePresentation(content.slice, spec, true)
-            } catch (e: Exception) {
-                AutofillLogger.log(context, "createInlineAuthPresentation", e.message ?: "")
-                null
-            }
-        }
-
-        fun createInlineDatasetPresentation(
-            context: android.content.Context,
-            inlineRequest: android.view.inputmethod.InlineSuggestionsRequest?,
-            title: String,
-            subtitle: String,
-            pendingIntent: PendingIntent,
-            index: Int = 0
-        ): android.service.autofill.InlinePresentation? {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || inlineRequest == null) return null
-            return try {
-                val specs = inlineRequest.inlinePresentationSpecs
-                if (specs.isEmpty()) return null
-                val specIndex = index.coerceAtMost(specs.size - 1)
-                val spec = specs[specIndex]
-                val content = androidx.autofill.inline.v1.InlineSuggestionUi.newContentBuilder(pendingIntent)
-                    .setTitle(title)
-                    .setSubtitle(subtitle)
-                    .build()
-                android.service.autofill.InlinePresentation(content.slice, spec, false)
-            } catch (e: Exception) {
-                AutofillLogger.log(context, "createInlineDatasetPresentation", e.message ?: "")
-                null
             }
         }
 
@@ -162,25 +116,31 @@ class VaultAutofillService : AutofillService() {
         }
 
         /**
-         * Traverses the complete AssistStructure and virtual node tree (Chrome/WebView).
-         * Extracts username/email/password AutofillIds and active values using multi-signal heuristics.
+         * Recursively parses the AssistStructure view hierarchy (Native apps, DuckDuckGo, Chrome, Edge, WebViews).
+         * Uses multi-signal heuristics to identify username/email/password fields accurately.
          */
-        fun parseStructure(structure: AssistStructure): ParsedFields {
+        fun parseStructure(structure: AssistStructure, context: android.content.Context? = null): ParsedFields {
             val parsed = ParsedFields()
             try {
                 parsed.packageName = structure.activityComponent?.packageName
             } catch (_: Exception) {}
 
+            val windowCount = structure.windowNodeCount
+            parsed.totalWindowNodes = windowCount
+
             val queue = ArrayDeque<AssistStructure.ViewNode>()
-            for (i in 0 until structure.windowNodeCount) {
-                val windowNode = structure.getWindowNodeAt(i)
-                queue.add(windowNode.rootViewNode)
+            for (i in 0 until windowCount) {
+                val windowNode = structure.getWindowNodeAt(i) ?: continue
+                val root = windowNode.rootViewNode ?: continue
+                queue.add(root)
             }
 
             var previousTextInputNode: AssistStructure.ViewNode? = null
+            var scannedCount = 0
 
             while (!queue.isEmpty()) {
                 val node = queue.poll() ?: continue
+                scannedCount++
 
                 // 1. Web Domain extraction
                 if (parsed.webDomain.isNullOrBlank() && !node.webDomain.isNullOrBlank()) {
@@ -195,6 +155,8 @@ class VaultAutofillService : AutofillService() {
                 val inputType = node.inputType
                 val className = node.className?.lowercase() ?: ""
                 val htmlInfo = node.htmlInfo
+                val htmlTag = htmlInfo?.tag?.lowercase() ?: ""
+
                 var nodeValue = node.autofillValue?.textValue?.toString()
                     ?: node.text?.toString()
                 if (nodeValue.isNullOrBlank() && htmlInfo != null) {
@@ -204,7 +166,27 @@ class VaultAutofillService : AutofillService() {
                 var isPassword = false
                 var isUsername = false
 
-                // 2. Check HTML Attributes (WebView / Chrome)
+                // 2. Primary Signal: Autofill Hints (Standard OS API)
+                if (hints != null && hints.isNotEmpty()) {
+                    if (hints.contains(View.AUTOFILL_HINT_PASSWORD.lowercase()) ||
+                        hints.contains("new_password") ||
+                        hints.contains("current_password") ||
+                        hints.contains("password")
+                    ) {
+                        isPassword = true
+                    }
+                    if (hints.contains(View.AUTOFILL_HINT_USERNAME.lowercase()) ||
+                        hints.contains(View.AUTOFILL_HINT_EMAIL_ADDRESS.lowercase()) ||
+                        hints.contains(View.AUTOFILL_HINT_NAME.lowercase()) ||
+                        hints.contains("email") ||
+                        hints.contains("username") ||
+                        hints.contains("login")
+                    ) {
+                        isUsername = true
+                    }
+                }
+
+                // 3. Secondary Signal: HTML Info Attributes (Browsers & WebViews)
                 if (htmlInfo != null) {
                     htmlInfo.attributes?.forEach { attrPair ->
                         val lowerName = attrPair.first?.lowercase() ?: ""
@@ -223,6 +205,9 @@ class VaultAutofillService : AutofillService() {
                             if (lowerVal == "password") {
                                 isPassword = true
                             }
+                            if (lowerVal in listOf("email", "text", "tel")) {
+                                // Potential text input
+                            }
                         }
 
                         if (lowerName in listOf("name", "id", "placeholder", "aria-label", "aria-labelledby")) {
@@ -236,7 +221,7 @@ class VaultAutofillService : AutofillService() {
                     }
                 }
 
-                // 3. Check InputType Variations
+                // 4. Tertiary Signal: InputType Variations
                 val textVariation = inputType and InputType.TYPE_MASK_VARIATION
                 val isTextClass = (inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT
                 val isNumberClass = (inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_NUMBER
@@ -258,38 +243,18 @@ class VaultAutofillService : AutofillService() {
                     isPassword = true
                 }
 
-                // 4. Check Autofill Hints
-                if (hints != null) {
-                    if (hints.contains(View.AUTOFILL_HINT_PASSWORD.lowercase()) ||
-                        hints.contains("new_password") ||
-                        hints.contains("current_password") ||
-                        hints.contains("password")
-                    ) {
-                        isPassword = true
-                    }
-                    if (hints.contains(View.AUTOFILL_HINT_USERNAME.lowercase()) ||
-                        hints.contains(View.AUTOFILL_HINT_EMAIL_ADDRESS.lowercase()) ||
-                        hints.contains(View.AUTOFILL_HINT_NAME.lowercase()) ||
-                        hints.contains("email") ||
-                        hints.contains("username") ||
-                        hints.contains("login")
-                    ) {
-                        isUsername = true
-                    }
-                }
-
-                // 5. Check Resource ID, Hint, and Content Description Strings
-                val combinedTextMeta = "$idEntry $hintText $contentDesc"
-                if (combinedTextMeta.contains("password") || combinedTextMeta.contains("pass") || combinedTextMeta.contains("pwd") || combinedTextMeta.contains("secret")) {
+                // 5. Signal: Resource ID, Hint, and Content Description Strings
+                val combinedMeta = "$idEntry $hintText $contentDesc"
+                if (combinedMeta.contains("password") || combinedMeta.contains("pass") || combinedMeta.contains("pwd") || combinedMeta.contains("secret")) {
                     isPassword = true
                 }
-                if (combinedTextMeta.contains("username") || combinedTextMeta.contains("user") || combinedTextMeta.contains("email") ||
-                    combinedTextMeta.contains("login") || combinedTextMeta.contains("account") || combinedTextMeta.contains("identifier")
+                if (combinedMeta.contains("username") || combinedMeta.contains("user") || combinedMeta.contains("email") ||
+                    combinedMeta.contains("login") || combinedMeta.contains("account") || combinedMeta.contains("identifier")
                 ) {
                     isUsername = true
                 }
 
-                // 6. Proximity Heuristic
+                // 6. Proximity Heuristic (Associate preceding text input with password field)
                 if (isPassword && parsed.usernameId == null && previousTextInputNode != null) {
                     val prevId = previousTextInputNode.autofillId
                     if (prevId != null) {
@@ -305,7 +270,7 @@ class VaultAutofillService : AutofillService() {
                     }
                 }
 
-                // 7. Record matches
+                // 7. Record matches and candidate IDs
                 if (autofillId != null) {
                     if (isPassword) {
                         if (!parsed.allCandidatePassIds.contains(autofillId)) {
@@ -327,21 +292,25 @@ class VaultAutofillService : AutofillService() {
                         if (!nodeValue.isNullOrBlank() && parsed.usernameValue.isNullOrBlank()) {
                             parsed.usernameValue = nodeValue
                         }
-                    } else if (isTextClass || className.contains("edittext") || className.contains("input")) {
+                    } else if (isTextClass || className.contains("edittext") || className.contains("input") || htmlTag == "input") {
                         previousTextInputNode = node
                     }
                 }
 
                 for (j in 0 until node.childCount) {
-                    queue.add(node.getChildAt(j))
+                    val child = node.getChildAt(j) ?: continue
+                    queue.add(child)
                 }
             }
 
+            parsed.totalScannedNodes = scannedCount
             return parsed
         }
     }
 
     data class ParsedFields(
+        var totalWindowNodes: Int = 0,
+        var totalScannedNodes: Int = 0,
         var usernameId: AutofillId? = null,
         var passwordId: AutofillId? = null,
         var usernameValue: String? = null,
@@ -357,6 +326,8 @@ class VaultAutofillService : AutofillService() {
         cancellationSignal: CancellationSignal,
         callback: FillCallback
     ) {
+        AutofillLogger.log(applicationContext, "onFillRequest called", "Request ID=${request.id}, Flags=${request.flags}")
+
         val fillContexts = request.fillContexts
         if (fillContexts.isEmpty()) {
             AutofillLogger.log(applicationContext, "onFillRequest", "No FillContexts available.")
@@ -364,7 +335,7 @@ class VaultAutofillService : AutofillService() {
             return
         }
 
-        // Aggregate structure parsing from the latest fill context (or all contexts if multi-step)
+        // Aggregate structure parsing from the latest fill context
         val latestContext = fillContexts.last()
         val structure = latestContext.structure
 
@@ -374,16 +345,18 @@ class VaultAutofillService : AutofillService() {
             return
         }
 
-        val parsed = parseStructure(structure)
+        val parsed = parseStructure(structure, applicationContext)
         AutofillLogger.log(
             applicationContext,
             "onFillRequest PARSED",
-            "pkg=${parsed.packageName}, domain=${parsed.webDomain}, hasUser=${parsed.usernameId != null}, hasPass=${parsed.passwordId != null}"
+            "Windows=${parsed.totalWindowNodes}, ScannedNodes=${parsed.totalScannedNodes}, pkg=${parsed.packageName}, domain=${parsed.webDomain}, detectedUser=${parsed.usernameId != null}, detectedPass=${parsed.passwordId != null}"
         )
 
         // If no credentials or inputs found at all, return null
-        if (parsed.usernameId == null && parsed.passwordId == null) {
-            AutofillLogger.log(applicationContext, "onFillRequest", "No username or password fields detected in view hierarchy.")
+        if (parsed.usernameId == null && parsed.passwordId == null &&
+            parsed.allCandidateUserIds.isEmpty() && parsed.allCandidatePassIds.isEmpty()
+        ) {
+            AutofillLogger.log(applicationContext, "onFillRequest", "No username or password fields detected.")
             callback.onSuccess(null)
             return
         }
@@ -394,18 +367,19 @@ class VaultAutofillService : AutofillService() {
                 val isUnlocked = repository.isUnlocked.value
                 val responseBuilder = FillResponse.Builder()
 
-                val targetAuthId = parsed.passwordId ?: parsed.usernameId
+                val primaryUserId = parsed.usernameId ?: parsed.allCandidateUserIds.firstOrNull()
+                val primaryPassId = parsed.passwordId ?: parsed.allCandidatePassIds.firstOrNull()
 
                 if (!isUnlocked) {
-                    AutofillLogger.log(applicationContext, "onFillRequest LOCKED", "Vault is locked. Setting authentication prompt.")
-                    
+                    AutofillLogger.log(applicationContext, "onFillRequest LOCKED", "Vault is locked. Returning authentication prompt.")
+
                     val authIntent = Intent(applicationContext, AutofillAuthActivity::class.java).apply {
                         putExtra("EXTRA_DOMAIN", parsed.webDomain)
                         putExtra("EXTRA_PACKAGE", parsed.packageName)
                         putExtra("EXTRA_MODE", "FILL")
                         putExtra("EXTRA_REQUEST_ID", request.id)
-                        parsed.usernameId?.let { putExtra("EXTRA_USER_ID", it) }
-                        parsed.passwordId?.let { putExtra("EXTRA_PASS_ID", it) }
+                        primaryUserId?.let { putExtra("EXTRA_USER_ID", it) }
+                        primaryPassId?.let { putExtra("EXTRA_PASS_ID", it) }
                         if (parsed.allCandidateUserIds.isNotEmpty()) {
                             putParcelableArrayListExtra("EXTRA_ALL_USER_IDS", ArrayList(parsed.allCandidateUserIds))
                         }
@@ -426,27 +400,13 @@ class VaultAutofillService : AutofillService() {
                     )
 
                     val authPresentation = createAuthPresentation(applicationContext)
-                    val inlineRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                        request.inlineSuggestionsRequest
-                    } else null
-                    val inlineAuth = createInlineAuthPresentation(applicationContext, inlineRequest, pendingIntent)
-
-                    val authIds = listOfNotNull(parsed.usernameId, parsed.passwordId).toTypedArray()
+                    val authIds = listOfNotNull(primaryUserId, primaryPassId).toTypedArray()
                     if (authIds.isNotEmpty()) {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && inlineAuth != null) {
-                            responseBuilder.setAuthentication(
-                                authIds,
-                                pendingIntent.intentSender,
-                                authPresentation,
-                                inlineAuth
-                            )
-                        } else {
-                            responseBuilder.setAuthentication(
-                                authIds,
-                                pendingIntent.intentSender,
-                                authPresentation
-                            )
-                        }
+                        responseBuilder.setAuthentication(
+                            authIds,
+                            pendingIntent.intentSender,
+                            authPresentation
+                        )
                     }
                 } else {
                     // Vault is unlocked - query stored credentials
@@ -468,57 +428,22 @@ class VaultAutofillService : AutofillService() {
 
                     AutofillLogger.log(applicationContext, "onFillRequest UNLOCKED", "Found ${matched.size} matching credentials.")
 
-                    val inlineRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                        request.inlineSuggestionsRequest
-                    } else null
-
-                    // Dummy intent for inline presentation chip attribution
-                    val dummyIntent = PendingIntent.getActivity(
-                        applicationContext,
-                        0,
-                        Intent(applicationContext, MainActivity::class.java),
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
-                    )
-
-                    var dsIdx = 0
                     for (entry in matched) {
                         val datasetBuilder = Dataset.Builder()
                         val presentation = createDatasetPresentation(applicationContext, entry.title, entry.username.ifBlank { "Fort Knox Vault" })
-                        val inlineDataset = createInlineDatasetPresentation(
-                            applicationContext,
-                            inlineRequest,
-                            entry.title,
-                            entry.username.ifBlank { "Fort Knox Login" },
-                            dummyIntent,
-                            dsIdx++
-                        )
 
                         var hasValue = false
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && inlineDataset != null) {
-                            parsed.usernameId?.let { uId ->
-                                if (entry.username.isNotBlank()) {
-                                    datasetBuilder.setValue(uId, AutofillValue.forText(entry.username), presentation, inlineDataset)
-                                    hasValue = true
-                                }
+                        primaryUserId?.let { uId ->
+                            if (entry.username.isNotBlank()) {
+                                datasetBuilder.setValue(uId, AutofillValue.forText(entry.username), presentation)
+                                hasValue = true
                             }
-                            parsed.passwordId?.let { pId ->
-                                if (entry.password.isNotBlank()) {
-                                    datasetBuilder.setValue(pId, AutofillValue.forText(entry.password), presentation, inlineDataset)
-                                    hasValue = true
-                                }
-                            }
-                        } else {
-                            parsed.usernameId?.let { uId ->
-                                if (entry.username.isNotBlank()) {
-                                    datasetBuilder.setValue(uId, AutofillValue.forText(entry.username), presentation)
-                                    hasValue = true
-                                }
-                            }
-                            parsed.passwordId?.let { pId ->
-                                if (entry.password.isNotBlank()) {
-                                    datasetBuilder.setValue(pId, AutofillValue.forText(entry.password), presentation)
-                                    hasValue = true
-                                }
+                        }
+
+                        primaryPassId?.let { pId ->
+                            if (entry.password.isNotBlank()) {
+                                datasetBuilder.setValue(pId, AutofillValue.forText(entry.password), presentation)
+                                hasValue = true
                             }
                         }
 
@@ -532,28 +457,25 @@ class VaultAutofillService : AutofillService() {
                 val requiredIds = mutableListOf<AutofillId>()
                 val optionalIds = mutableListOf<AutofillId>()
 
-                val passId = parsed.passwordId
-                val userId = parsed.usernameId
-
-                if (passId != null) {
-                    requiredIds.add(passId)
-                    if (userId != null) {
-                        optionalIds.add(userId)
+                if (primaryPassId != null) {
+                    requiredIds.add(primaryPassId)
+                    if (primaryUserId != null) {
+                        optionalIds.add(primaryUserId)
                     }
                     for (extraPass in parsed.allCandidatePassIds) {
-                        if (extraPass != passId && !optionalIds.contains(extraPass)) {
+                        if (extraPass != primaryPassId && !optionalIds.contains(extraPass)) {
                             optionalIds.add(extraPass)
                         }
                     }
                     for (extraUser in parsed.allCandidateUserIds) {
-                        if (extraUser != userId && !optionalIds.contains(extraUser)) {
+                        if (extraUser != primaryUserId && !optionalIds.contains(extraUser)) {
                             optionalIds.add(extraUser)
                         }
                     }
-                } else if (userId != null) {
-                    requiredIds.add(userId)
+                } else if (primaryUserId != null) {
+                    requiredIds.add(primaryUserId)
                     for (extraUser in parsed.allCandidateUserIds) {
-                        if (extraUser != userId && !optionalIds.contains(extraUser)) {
+                        if (extraUser != primaryUserId && !optionalIds.contains(extraUser)) {
                             optionalIds.add(extraUser)
                         }
                     }
@@ -561,9 +483,9 @@ class VaultAutofillService : AutofillService() {
 
                 if (requiredIds.isNotEmpty()) {
                     val saveInfoType = when {
-                        passId != null && userId != null ->
+                        primaryPassId != null && primaryUserId != null ->
                             SaveInfo.SAVE_DATA_TYPE_USERNAME or SaveInfo.SAVE_DATA_TYPE_PASSWORD
-                        passId != null -> SaveInfo.SAVE_DATA_TYPE_PASSWORD
+                        primaryPassId != null -> SaveInfo.SAVE_DATA_TYPE_PASSWORD
                         else -> SaveInfo.SAVE_DATA_TYPE_USERNAME
                     }
 
@@ -586,7 +508,7 @@ class VaultAutofillService : AutofillService() {
     }
 
     override fun onSaveRequest(request: SaveRequest, callback: SaveCallback) {
-        AutofillLogger.log(applicationContext, "onSaveRequest RECEIVED", "Save request triggered.")
+        AutofillLogger.log(applicationContext, "onSaveRequest called", "Save request triggered.")
 
         var username = ""
         var password = ""
@@ -596,7 +518,7 @@ class VaultAutofillService : AutofillService() {
         // Aggregate structure parsing from all fill contexts (supports multi-screen flows)
         for (fillContext in request.fillContexts) {
             val structure = fillContext.structure ?: continue
-            val parsed = parseStructure(structure)
+            val parsed = parseStructure(structure, applicationContext)
             if (!parsed.usernameValue.isNullOrBlank()) username = parsed.usernameValue!!.trim()
             if (!parsed.passwordValue.isNullOrBlank()) password = parsed.passwordValue!!.trim()
             if (!parsed.webDomain.isNullOrBlank()) webDomain = parsed.webDomain
