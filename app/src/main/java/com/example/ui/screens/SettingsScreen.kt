@@ -61,6 +61,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.preferences.VaultPreferences
@@ -246,30 +247,39 @@ fun SettingsScreen(
                     }
                     Spacer(modifier = Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Encryption Inspector",
+                            color = CyberTextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "Encryption Inspector",
-                                color = CyberTextPrimary,
-                                fontSize = 13.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
                             Box(
                                 modifier = Modifier
-                                    .clip(CutCornerShape(4.dp))
+                                    .clip(CutCornerShape(3.dp))
                                     .background(CyberEmerald.copy(alpha = 0.2f))
                                     .padding(horizontal = 4.dp, vertical = 1.dp)
                             ) {
-                                Text("VERIFIED", color = CyberEmerald, fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = "VERIFIED",
+                                    color = CyberEmerald,
+                                    fontSize = 8.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
                             }
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "SQLCipher • AES-GCM • Argon2id",
+                                color = CyberTextMuted,
+                                fontSize = 10.5.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
-                        Text(
-                            text = "SQLCipher, AES-256-GCM, Argon2id & self-tests",
-                            color = CyberTextMuted,
-                            fontSize = 10.5.sp,
-                            maxLines = 1
-                        )
                     }
                 }
 

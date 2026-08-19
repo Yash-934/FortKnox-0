@@ -36,6 +36,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.VaultEntry
@@ -189,30 +190,39 @@ fun SecurityAuditScreen(
                     }
                     Spacer(modifier = Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Encryption Inspector",
+                            color = CyberTextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "Encryption Inspector",
-                                color = CyberTextPrimary,
-                                fontSize = 13.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
                             Box(
                                 modifier = Modifier
-                                    .clip(CutCornerShape(4.dp))
+                                    .clip(CutCornerShape(3.dp))
                                     .background(CyberEmerald.copy(alpha = 0.2f))
                                     .padding(horizontal = 4.dp, vertical = 1.dp)
                             ) {
-                                Text("ACTIVE", color = CyberEmerald, fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = "ACTIVE",
+                                    color = CyberEmerald,
+                                    fontSize = 8.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
                             }
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "SQLCipher • AES-GCM • Argon2id",
+                                color = CyberTextMuted,
+                                fontSize = 10.5.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
-                        Text(
-                            text = "Verify SQLCipher, AES-GCM, Argon2id & self-tests",
-                            color = CyberTextMuted,
-                            fontSize = 10.5.sp,
-                            maxLines = 1
-                        )
                     }
                 }
 

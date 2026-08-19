@@ -26,8 +26,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -78,6 +80,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.security.ComponentInspection
@@ -162,44 +166,75 @@ fun EncryptionInspectorScreen(
         runSelfTest()
     }
 
+    fun processBackupUri(uri: Uri) {
+        scope.launch(Dispatchers.IO) {
+            isInspectingBackupFile = true
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val content = inputStream?.bufferedReader()?.use { it.readText() } ?: ""
+                val header = inspectorEngine.parseBackupHeader(content)
+                withContext(Dispatchers.Main) {
+                    parsedBackupHeader = header
+                    expandedCardId = "BACKUPS"
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    parsedBackupHeader = ParsedBackupHeader(
+                        formatVersion = 0,
+                        kdfAlgorithm = "Error",
+                        iterations = 0,
+                        memoryKb = 0,
+                        saltLengthBytes = 0,
+                        nonceLengthBytes = 0,
+                        ciphertextLengthBytes = 0,
+                        isDeviceBound = false,
+                        deviceIvPresent = false,
+                        backupTimestamp = 0L,
+                        appIdentifier = "Unknown",
+                        isValidFormat = false,
+                        errorMessage = "Failed to read backup file: ${e.message}"
+                    )
+                    expandedCardId = "BACKUPS"
+                }
+            } finally {
+                withContext(Dispatchers.Main) {
+                    isInspectingBackupFile = false
+                }
+            }
+        }
+    }
+
     // SAF Picker to inspect external or exported encrypted backup headers
     val backupPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
-            scope.launch(Dispatchers.IO) {
-                isInspectingBackupFile = true
-                try {
-                    val inputStream = context.contentResolver.openInputStream(uri)
-                    val content = inputStream?.bufferedReader()?.use { it.readText() } ?: ""
-                    val header = inspectorEngine.parseBackupHeader(content)
-                    withContext(Dispatchers.Main) {
-                        parsedBackupHeader = header
-                        expandedCardId = "BACKUPS"
-                    }
-                } catch (e: Exception) {
-                    withContext(Dispatchers.Main) {
-                        parsedBackupHeader = ParsedBackupHeader(
-                            formatVersion = 0,
-                            kdfAlgorithm = "Error",
-                            iterations = 0,
-                            memoryKb = 0,
-                            saltLengthBytes = 0,
-                            nonceLengthBytes = 0,
-                            ciphertextLengthBytes = 0,
-                            isDeviceBound = false,
-                            deviceIvPresent = false,
-                            backupTimestamp = 0L,
-                            appIdentifier = "Unknown",
-                            isValidFormat = false,
-                            errorMessage = "Failed to read backup file: ${e.message}"
-                        )
-                    }
-                } finally {
-                    withContext(Dispatchers.Main) {
-                        isInspectingBackupFile = false
+            processBackupUri(uri)
+        }
+    }
+
+    fun launchBackupPicker() {
+        try {
+            val intent = android.content.Intent(android.content.Intent.ACTION_GET_CONTENT).apply {
+                type = "*/*"
+            }
+            val mainActivity = context as? com.example.MainActivity
+            if (mainActivity != null) {
+                mainActivity.launchLegacyFilePicker(intent) { uri ->
+                    if (uri != null) {
+                        processBackupUri(uri)
                     }
                 }
+            } else {
+                backupPickerLauncher.launch(arrayOf("application/json", "application/octet-stream", "*/*"))
+            }
+        } catch (e: Exception) {
+            val dir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS)
+            val latestFile = dir?.listFiles { file -> file.name.endsWith(".fortknox") }?.maxByOrNull { it.lastModified() }
+            if (latestFile != null) {
+                processBackupUri(android.net.Uri.fromFile(latestFile))
+            } else {
+                android.widget.Toast.makeText(context, "File picker error: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -227,7 +262,9 @@ fun EncryptionInspectorScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
                 .verticalScroll(rememberScrollState())
         ) {
             // Header Bar
@@ -531,7 +568,7 @@ fun EncryptionInspectorScreen(
                         expandedCardId = if (expandedCardId == component.id) null else component.id
                     },
                     onInspectBackupFile = if (component.id == "BACKUPS") {
-                        { backupPickerLauncher.launch(arrayOf("application/json", "application/octet-stream", "*/*")) }
+                        { launchBackupPicker() }
                     } else null,
                     parsedBackupHeader = if (component.id == "BACKUPS") parsedBackupHeader else null,
                     isInspectingFile = if (component.id == "BACKUPS") isInspectingBackupFile else false
@@ -567,31 +604,41 @@ private fun SelfTestItemRow(test: com.example.security.SelfTestItem) {
                     .padding(top = 2.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
                     Text(
                         text = test.testName,
                         color = CyberTextPrimary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = "${test.durationMs}ms",
                         color = CyberTextMuted,
-                        fontSize = 10.sp,
+                        fontSize = 9.5.sp,
                         fontFamily = FontFamily.Monospace
                     )
                 }
                 Text(
                     text = test.technicalMetric,
                     color = CyberTextSecondary,
-                    fontSize = 10.5.sp,
+                    fontSize = 10.sp,
                     fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.padding(top = 2.dp)
+                    modifier = Modifier.padding(top = 2.dp),
+                    lineHeight = 14.sp
                 )
             }
         }
+
+        Spacer(modifier = Modifier.width(6.dp))
 
         CyberBadge(
             text = if (test.isPassed) "PASS" else "FAIL",
@@ -777,20 +824,25 @@ private fun ComponentInspectionCard(
                                             text = "BACKUP HEADER INSPECTOR",
                                             color = CyberTextPrimary,
                                             fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1
                                         )
                                         Text(
-                                            text = "Select a backup file to inspect envelope parameters (0 password required)",
+                                            text = "Inspect envelope metadata (0 password needed)",
                                             color = CyberTextMuted,
-                                            fontSize = 10.5.sp
+                                            fontSize = 10.5.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
+
+                                    Spacer(modifier = Modifier.width(8.dp))
 
                                     CyberOutlinedButton(
                                         text = if (isInspectingFile) "PARSING..." else "SELECT FILE",
                                         color = CyberPurple,
                                         onClick = onInspectBackupFile,
-                                        modifier = Modifier.height(32.dp)
+                                        modifier = Modifier.height(34.dp)
                                     )
                                 }
 
@@ -807,16 +859,19 @@ private fun ComponentInspectionCard(
                                         if (parsedBackupHeader.isValidFormat) {
                                             Row(
                                                 modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
                                             ) {
                                                 Text(
-                                                    text = "PARSED BACKUP ENVELOPE (V${parsedBackupHeader.formatVersion})",
+                                                    text = "PARSED ENVELOPE (V${parsedBackupHeader.formatVersion})",
                                                     color = CyberEmerald,
                                                     fontSize = 10.sp,
                                                     fontWeight = FontWeight.Bold,
-                                                    fontFamily = FontFamily.Monospace
+                                                    fontFamily = FontFamily.Monospace,
+                                                    maxLines = 1,
+                                                    modifier = Modifier.weight(1f)
                                                 )
-                                                CyberBadge(text = "VALID ENVELOPE", color = CyberEmerald)
+                                                CyberBadge(text = "VALID", color = CyberEmerald)
                                             }
 
                                             Spacer(modifier = Modifier.height(6.dp))
@@ -825,9 +880,9 @@ private fun ComponentInspectionCard(
                                             DetailSpecRow(label = "Argon2id Iterations", value = "${parsedBackupHeader.iterations} passes")
                                             DetailSpecRow(label = "Salt Byte Length", value = "${parsedBackupHeader.saltLengthBytes} bytes (${parsedBackupHeader.saltLengthBytes * 8}-bit)")
                                             DetailSpecRow(label = "Nonce (IV) Length", value = "${parsedBackupHeader.nonceLengthBytes} bytes (${parsedBackupHeader.nonceLengthBytes * 8}-bit)")
-                                            DetailSpecRow(label = "Ciphertext Payload Size", value = "${parsedBackupHeader.ciphertextLengthBytes} bytes")
-                                            DetailSpecRow(label = "Hardware Device Bound", value = if (parsedBackupHeader.isDeviceBound) "YES (Encapsulated in Keystore Key)" else "NO (Portable Backup)")
-                                            DetailSpecRow(label = "Timestamp", value = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(parsedBackupHeader.backupTimestamp)))
+                                            DetailSpecRow(label = "Ciphertext Size", value = "${parsedBackupHeader.ciphertextLengthBytes} bytes")
+                                            DetailSpecRow(label = "Device Bound", value = if (parsedBackupHeader.isDeviceBound) "YES (Hardware Keystore)" else "NO (Portable)")
+                                            DetailSpecRow(label = "Timestamp", value = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date(parsedBackupHeader.backupTimestamp)))
                                         } else {
                                             Text(
                                                 text = "PARSING FAILED: ${parsedBackupHeader.errorMessage}",
@@ -855,19 +910,24 @@ private fun DetailSpecRow(label: String, value: String) {
             .fillMaxWidth()
             .padding(vertical = 3.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.Top
     ) {
         Text(
             text = label,
             color = CyberTextSecondary,
-            fontSize = 11.sp
+            fontSize = 10.5.sp,
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 6.dp)
         )
         Text(
             text = value,
             color = CyberTextPrimary,
-            fontSize = 11.sp,
+            fontSize = 10.5.sp,
             fontWeight = FontWeight.SemiBold,
-            fontFamily = FontFamily.Monospace
+            fontFamily = FontFamily.Monospace,
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(1.2f)
         )
     }
 }
