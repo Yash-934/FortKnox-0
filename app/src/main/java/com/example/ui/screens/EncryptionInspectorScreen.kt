@@ -234,59 +234,69 @@ fun EncryptionInspectorScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 8.dp),
+                    .padding(bottom = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(
                     onClick = onBack,
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(38.dp)
                         .clip(CutCornerShape(8.dp))
                         .background(CyberSurfaceVariant)
                 ) {
                     Icon(
                         imageVector = Icons.Default.ArrowBack,
                         contentDescription = "Back",
-                        tint = CyberCyan
+                        tint = CyberCyan,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(10.dp))
 
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "ENCRYPTION INSPECTOR",
-                            color = CyberTextPrimary,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = 1.sp
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = "ENCRYPTION INSPECTOR",
+                        color = CyberTextPrimary,
+                        fontSize = 15.5.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 0.8.sp,
+                        maxLines = 1
+                    )
+                    Row(
+                        modifier = Modifier.padding(top = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Box(
                             modifier = Modifier
                                 .clip(CutCornerShape(4.dp))
                                 .background(CyberEmerald.copy(alpha = 0.2f))
                                 .border(1.dp, CyberEmerald.copy(alpha = 0.4f), CutCornerShape(4.dp))
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                .padding(horizontal = 5.dp, vertical = 1.dp)
                         ) {
                             Text(
-                                text = "OFFLINE AIR-GAP",
+                                text = "AIR-GAP",
                                 color = CyberEmerald,
-                                fontSize = 9.sp,
+                                fontSize = 8.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace
                             )
                         }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "ZERO-KNOWLEDGE SUBSYSTEM",
+                            color = CyberCyan,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp,
+                            maxLines = 1
+                        )
                     }
-                    Text(
-                        text = "ZERO-KNOWLEDGE CRYPTOGRAPHIC SUBSYSTEM",
-                        color = CyberCyan,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.8.sp
-                    )
                 }
+
+                Spacer(modifier = Modifier.width(8.dp))
 
                 IconButton(
                     onClick = {
@@ -294,21 +304,22 @@ fun EncryptionInspectorScreen(
                         runSelfTest()
                     },
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(38.dp)
                         .clip(CutCornerShape(8.dp))
                         .background(CyberSurfaceVariant)
                 ) {
                     if (isRefreshing || isRunningSelfTest) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
+                            modifier = Modifier.size(18.dp),
                             color = CyberCyan,
                             strokeWidth = 2.dp
                         )
                     } else {
                         Icon(
                             imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh",
-                            tint = CyberCyan
+                            contentDescription = "Scan & Verify",
+                            tint = CyberCyan,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
@@ -326,11 +337,14 @@ fun EncryptionInspectorScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                        .padding(horizontal = 10.dp, vertical = 7.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.weight(1f, fill = false),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Box(
                             modifier = Modifier
                                 .size(8.dp)
@@ -338,22 +352,32 @@ fun EncryptionInspectorScreen(
                                 .background(CyberEmerald)
                                 .alpha(pulseAlpha)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "Last Verified: ${dateFormat.format(Date(lastVerifiedTimestamp))}",
+                            text = "Verified: ${dateFormat.format(Date(lastVerifiedTimestamp))}",
                             color = CyberTextSecondary,
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace
+                            fontSize = 10.5.sp,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1
                         )
                     }
 
-                    Text(
-                        text = "FLAG_SECURE ON",
-                        color = CyberEmerald,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .clip(CutCornerShape(4.dp))
+                            .background(CyberEmerald.copy(alpha = 0.15f))
+                            .padding(horizontal = 5.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "FLAG_SECURE",
+                            color = CyberEmerald,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
                 }
             }
 
@@ -369,26 +393,30 @@ fun EncryptionInspectorScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "CRYPTOGRAPHIC ENGINE STATUS",
                                 color = CyberTextSecondary,
-                                fontSize = 11.sp,
+                                fontSize = 10.5.sp,
                                 fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace
+                                fontFamily = FontFamily.Monospace,
+                                maxLines = 1
                             )
                             Text(
                                 text = if (selfTestReport?.passedTests == selfTestReport?.totalTests) "100% OPERATIONAL" else "SELF-TEST ACTIVE",
                                 color = CyberEmerald,
-                                fontSize = 20.sp,
+                                fontSize = 18.sp,
                                 fontWeight = FontWeight.Black,
-                                letterSpacing = 1.sp
+                                letterSpacing = 0.8.sp,
+                                maxLines = 1
                             )
                         }
 
+                        Spacer(modifier = Modifier.width(8.dp))
+
                         Box(
                             modifier = Modifier
-                                .size(48.dp)
+                                .size(44.dp)
                                 .clip(CircleShape)
                                 .background(CyberEmerald.copy(alpha = 0.15f))
                                 .border(1.dp, CyberEmerald.copy(alpha = 0.4f), CircleShape),
@@ -398,7 +426,7 @@ fun EncryptionInspectorScreen(
                                 imageVector = Icons.Default.Shield,
                                 contentDescription = "Shield Active",
                                 tint = CyberEmerald,
-                                modifier = Modifier.size(28.dp)
+                                modifier = Modifier.size(24.dp)
                             )
                         }
                     }
@@ -618,30 +646,32 @@ private fun ComponentInspectionCard(
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
 
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = component.name,
                                 color = CyberTextPrimary,
-                                fontSize = 13.5.sp,
-                                fontWeight = FontWeight.Bold
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
                             Icon(
                                 imageVector = Icons.Default.Shield,
                                 contentDescription = "Active",
                                 tint = CyberEmerald,
-                                modifier = Modifier.size(14.dp)
+                                modifier = Modifier.size(13.dp)
                             )
                         }
                         Text(
                             text = component.algorithm,
                             color = CyberCyan,
-                            fontSize = 10.5.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Medium,
                             fontFamily = FontFamily.Monospace,
+                            maxLines = 1,
                             modifier = Modifier.padding(top = 2.dp)
                         )
                     }

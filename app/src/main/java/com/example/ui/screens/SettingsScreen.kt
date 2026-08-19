@@ -244,19 +244,20 @@ fun SettingsScreen(
                     ) {
                         Icon(Icons.Default.Security, contentDescription = null, tint = CyberEmerald, modifier = Modifier.size(24.dp))
                     }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = "Encryption Inspector",
                                 color = CyberTextPrimary,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold
+                                fontSize = 13.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Box(
                                 modifier = Modifier
-                                    .clip(androidx.compose.foundation.shape.CutCornerShape(4.dp))
+                                    .clip(CutCornerShape(4.dp))
                                     .background(CyberEmerald.copy(alpha = 0.2f))
                                     .padding(horizontal = 4.dp, vertical = 1.dp)
                             ) {
@@ -264,12 +265,15 @@ fun SettingsScreen(
                             }
                         }
                         Text(
-                            text = "SQLCipher, AES-256-GCM, Argon2id & dynamic self-tests",
+                            text = "SQLCipher, AES-256-GCM, Argon2id & self-tests",
                             color = CyberTextMuted,
-                            fontSize = 11.sp
+                            fontSize = 10.5.sp,
+                            maxLines = 1
                         )
                     }
                 }
+
+                Spacer(modifier = Modifier.width(8.dp))
 
                 CyberButton(
                     text = "INSPECT",
