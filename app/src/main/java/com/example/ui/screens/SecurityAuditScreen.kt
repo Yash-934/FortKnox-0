@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -60,7 +61,8 @@ fun SecurityAuditScreen(
     entries: List<VaultEntry>,
     integrityReport: SecurityIntegrityChecker.IntegrityReport,
     onEntryClick: (VaultEntry) -> Unit,
-    onNavigateToIntruderLogs: () -> Unit = {}
+    onNavigateToIntruderLogs: () -> Unit = {},
+    onNavigateToEncryptionInspector: () -> Unit = {}
 ) {
     val weakEntries = remember(entries) {
         entries.filter {
@@ -150,6 +152,74 @@ fun SecurityAuditScreen(
                         modifier = Modifier.size(36.dp)
                     )
                 }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Encryption Inspector Quick Access Card
+        CyberCard(
+            modifier = Modifier.fillMaxWidth(),
+            glowColor = CyberCyan.copy(alpha = 0.25f),
+            borderColor = CyberCyan.copy(alpha = 0.5f)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CutCornerShape(8.dp))
+                            .background(CyberCyan.copy(alpha = 0.15f))
+                            .border(1.dp, CyberCyan.copy(alpha = 0.4f), CutCornerShape(8.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Security,
+                            contentDescription = null,
+                            tint = CyberCyan,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Encryption Inspector",
+                                color = CyberTextPrimary,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(androidx.compose.foundation.shape.CutCornerShape(4.dp))
+                                    .background(CyberEmerald.copy(alpha = 0.2f))
+                                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                            ) {
+                                Text("ACTIVE", color = CyberEmerald, fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        Text(
+                            text = "Verify SQLCipher, AES-GCM, Argon2id & run live self-tests",
+                            color = CyberTextMuted,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                CyberButton(
+                    text = "INSPECT",
+                    color = CyberCyan,
+                    onClick = onNavigateToEncryptionInspector,
+                    modifier = Modifier.height(34.dp)
+                )
             }
         }
 

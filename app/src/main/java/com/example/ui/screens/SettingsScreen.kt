@@ -96,6 +96,7 @@ fun SettingsScreen(
     onTestCapturePhoto: () -> Unit = {},
     onNavigateToScanner: () -> Unit,
     onNavigateToIntruderLogs: () -> Unit = {},
+    onNavigateToEncryptionInspector: () -> Unit = {},
     onNavigateToAbout: () -> Unit,
     onChangeMasterPassword: (CharArray) -> Unit,
     onRotateVaultKey: (CharArray) -> Unit = {},
@@ -214,6 +215,66 @@ fun SettingsScreen(
                 CyberButton(
                     text = "AUDIT",
                     onClick = onNavigateToScanner,
+                    modifier = Modifier.height(34.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Encryption Inspector Subsystem Card
+        CyberCard(
+            modifier = Modifier.fillMaxWidth(),
+            glowColor = CyberEmerald.copy(alpha = 0.2f),
+            borderColor = CyberEmerald.copy(alpha = 0.4f)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CutCornerShape(8.dp))
+                            .background(CyberEmerald.copy(alpha = 0.15f))
+                            .border(1.dp, CyberEmerald.copy(alpha = 0.4f), CutCornerShape(8.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Security, contentDescription = null, tint = CyberEmerald, modifier = Modifier.size(24.dp))
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Encryption Inspector",
+                                color = CyberTextPrimary,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(androidx.compose.foundation.shape.CutCornerShape(4.dp))
+                                    .background(CyberEmerald.copy(alpha = 0.2f))
+                                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                            ) {
+                                Text("VERIFIED", color = CyberEmerald, fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        Text(
+                            text = "SQLCipher, AES-256-GCM, Argon2id & dynamic self-tests",
+                            color = CyberTextMuted,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                CyberButton(
+                    text = "INSPECT",
+                    color = CyberEmerald,
+                    onClick = onNavigateToEncryptionInspector,
                     modifier = Modifier.height(34.dp)
                 )
             }

@@ -122,10 +122,18 @@ fun MainAppScreen(
     var rootWarningDismissed by remember { mutableStateOf(false) }
     var showScannerScreen by remember { mutableStateOf(false) }
     var showIntruderLogsScreen by remember { mutableStateOf(false) }
+    var showEncryptionInspectorScreen by remember { mutableStateOf(false) }
     var showAboutScreen by remember { mutableStateOf(false) }
     var isDecoyModeActive by remember { mutableStateOf(false) }
 
     val securityScanner = remember { SecurityScanner(context, repository.preferences) }
+    val inspectorEngine = remember {
+        com.example.security.EncryptionInspectorEngine(
+            context = context,
+            database = com.example.data.db.VaultDatabase.getDatabase(context),
+            preferences = repository.preferences
+        )
+    }
 
     // If disguise mode is enabled in preferences, start in decoy mode when vault is locked
     LaunchedEffect(config.isDisguiseMode) {
@@ -374,11 +382,19 @@ fun MainAppScreen(
         showScannerScreen = false
     }
 
+    BackHandler(enabled = showIntruderLogsScreen) {
+        showIntruderLogsScreen = false
+    }
+
+    BackHandler(enabled = showEncryptionInspectorScreen) {
+        showEncryptionInspectorScreen = false
+    }
+
     BackHandler(enabled = showAboutScreen) {
         showAboutScreen = false
     }
 
-    BackHandler(enabled = isUnlocked && currentTab != AppTab.VAULT && !isAddingEntry && editingEntry == null && !showScannerScreen && !showAboutScreen) {
+    BackHandler(enabled = isUnlocked && currentTab != AppTab.VAULT && !isAddingEntry && editingEntry == null && !showScannerScreen && !showIntruderLogsScreen && !showEncryptionInspectorScreen && !showAboutScreen) {
         currentTab = AppTab.VAULT
     }
 
@@ -443,6 +459,14 @@ fun MainAppScreen(
             onDeleteLog = { id -> scope.launch { repository.deleteIntrusionLog(id) } },
             onClearAllLogs = { scope.launch { repository.clearIntrusionLogs() } },
             onBack = { showIntruderLogsScreen = false }
+        )
+        return
+    }
+
+    if (showEncryptionInspectorScreen) {
+        EncryptionInspectorScreen(
+            inspectorEngine = inspectorEngine,
+            onBack = { showEncryptionInspectorScreen = false }
         )
         return
     }
@@ -575,7 +599,8 @@ fun MainAppScreen(
                             entries = entries,
                             integrityReport = integrityReport,
                             onEntryClick = { editingEntry = it },
-                            onNavigateToIntruderLogs = { showIntruderLogsScreen = true }
+                            onNavigateToIntruderLogs = { showIntruderLogsScreen = true },
+                            onNavigateToEncryptionInspector = { showEncryptionInspectorScreen = true }
                         )
                     }
 
@@ -636,6 +661,9 @@ fun MainAppScreen(
                             },
                             onNavigateToIntruderLogs = {
                                 showIntruderLogsScreen = true
+                            },
+                            onNavigateToEncryptionInspector = {
+                                showEncryptionInspectorScreen = true
                             },
                             onNavigateToAbout = {
                                 showAboutScreen = true
