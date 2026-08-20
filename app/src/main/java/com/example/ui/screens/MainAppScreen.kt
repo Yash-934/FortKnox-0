@@ -142,6 +142,18 @@ fun MainAppScreen(
         }
     }
 
+    // Reset transient child screen states when vault locks
+    LaunchedEffect(isUnlocked) {
+        if (!isUnlocked) {
+            showScannerScreen = false
+            showIntruderLogsScreen = false
+            showEncryptionInspectorScreen = false
+            showAboutScreen = false
+            editingEntry = null
+            isAddingEntry = false
+        }
+    }
+
     // Seed decoy notes if empty
     LaunchedEffect(Unit) {
         repository.seedInitialDecoyNotesIfEmpty()

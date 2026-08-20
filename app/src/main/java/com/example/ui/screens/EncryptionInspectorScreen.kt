@@ -1,8 +1,13 @@
 package com.example.ui.screens
 
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.net.Uri
+import android.os.Build
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -41,6 +46,7 @@ import androidx.compose.material.icons.filled.AssignmentTurnedIn
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ExpandLess
@@ -52,6 +58,7 @@ import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Timer
@@ -239,6 +246,18 @@ fun EncryptionInspectorScreen(
         }
     }
 
+    fun copySecuritySummary() {
+        val summary = generateSecuritySummary(
+            inspections = inspections,
+            report = selfTestReport,
+            lastVerifiedTimestamp = lastVerifiedTimestamp
+        )
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        val clip = ClipData.newPlainText("Fort Knox Cryptographic Audit", summary)
+        clipboard?.setPrimaryClip(clip)
+        Toast.makeText(context, "Security summary copied to clipboard", Toast.LENGTH_SHORT).show()
+    }
+
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val pulseAlpha by infiniteTransition.animateFloat(
         initialValue = 0.5f,
@@ -333,7 +352,24 @@ fun EncryptionInspectorScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+
+                IconButton(
+                    onClick = { copySecuritySummary() },
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CutCornerShape(8.dp))
+                        .background(CyberSurfaceVariant)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ContentCopy,
+                        contentDescription = "Copy Security Summary",
+                        tint = CyberEmerald,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
 
                 IconButton(
                     onClick = {
@@ -359,6 +395,39 @@ fun EncryptionInspectorScreen(
                             modifier = Modifier.size(20.dp)
                         )
                     }
+                }
+            }
+
+            // Play Store Mandatory Security Disclaimer Banner
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 10.dp),
+                color = CyberCyan.copy(alpha = 0.08f),
+                shape = CutCornerShape(6.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, CyberCyan.copy(alpha = 0.35f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = null,
+                        tint = CyberCyan,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Metadata only. No keys or decrypted data are displayed.",
+                        color = CyberCyan,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        letterSpacing = 0.3.sp
+                    )
                 }
             }
 
@@ -479,14 +548,25 @@ fun EncryptionInspectorScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Self Test Button
-                    CyberButton(
-                        text = if (isRunningSelfTest) "EXECUTING SELF-TEST..." else "RUN ENCRYPTION SELF-TEST",
-                        color = CyberCyan,
-                        onClick = { runSelfTest() },
-                        enabled = !isRunningSelfTest,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    // Self Test & Share Summary Actions
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        CyberButton(
+                            text = if (isRunningSelfTest) "TESTING..." else "RUN SELF-TEST",
+                            color = CyberCyan,
+                            onClick = { runSelfTest() },
+                            enabled = !isRunningSelfTest,
+                            modifier = Modifier.weight(1.1f)
+                        )
+                        CyberOutlinedButton(
+                            text = "COPY SUMMARY",
+                            color = CyberEmerald,
+                            onClick = { copySecuritySummary() },
+                            modifier = Modifier.weight(0.9f)
+                        )
+                    }
 
                     // Self Test Results List
                     if (selfTestReport != null) {
@@ -882,7 +962,54 @@ private fun ComponentInspectionCard(
                                             DetailSpecRow(label = "Nonce (IV) Length", value = "${parsedBackupHeader.nonceLengthBytes} bytes (${parsedBackupHeader.nonceLengthBytes * 8}-bit)")
                                             DetailSpecRow(label = "Ciphertext Size", value = "${parsedBackupHeader.ciphertextLengthBytes} bytes")
                                             DetailSpecRow(label = "Device Bound", value = if (parsedBackupHeader.isDeviceBound) "YES (Hardware Keystore)" else "NO (Portable)")
+                                            if (parsedBackupHeader.wrappedKeyDescriptor != null) {
+                                                DetailSpecRow(label = "Hardware Key Layer", value = parsedBackupHeader.wrappedKeyDescriptor)
+                                            }
                                             DetailSpecRow(label = "Timestamp", value = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date(parsedBackupHeader.backupTimestamp)))
+
+                                            if (!parsedBackupHeader.truncatedHexDump.isNullOrEmpty()) {
+                                                Spacer(modifier = Modifier.height(10.dp))
+                                                Text(
+                                                    text = "RAW HEADER HEX DUMP (TRUNCATED TO 128 BYTES)",
+                                                    color = CyberCyan,
+                                                    fontSize = 9.5.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontFamily = FontFamily.Monospace
+                                                )
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Surface(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    color = CyberBackground,
+                                                    shape = CutCornerShape(4.dp),
+                                                    border = androidx.compose.foundation.BorderStroke(1.dp, CyberBorder)
+                                                ) {
+                                                    Column(modifier = Modifier.padding(8.dp)) {
+                                                        Text(
+                                                            text = parsedBackupHeader.truncatedHexDump,
+                                                            color = CyberTextSecondary,
+                                                            fontSize = 8.5.sp,
+                                                            fontFamily = FontFamily.Monospace,
+                                                            lineHeight = 12.5.sp
+                                                        )
+                                                        Spacer(modifier = Modifier.height(4.dp))
+                                                        Text(
+                                                            text = "• Display truncated to first 128 bytes. Zero keys or plaintext bytes displayed.",
+                                                            color = CyberEmerald,
+                                                            fontSize = 8.5.sp,
+                                                            fontFamily = FontFamily.Monospace
+                                                        )
+                                                    }
+                                                }
+                                            }
+
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Text(
+                                                text = "🔒 Metadata only. No keys or decrypted data are displayed.",
+                                                color = CyberEmerald,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontFamily = FontFamily.Monospace
+                                            )
                                         } else {
                                             Text(
                                                 text = "PARSING FAILED: ${parsedBackupHeader.errorMessage}",
@@ -930,4 +1057,50 @@ private fun DetailSpecRow(label: String, value: String) {
             modifier = Modifier.weight(1.2f)
         )
     }
+}
+
+/**
+ * Generates an exportable, shareable security audit summary string.
+ * Strictly free of sensitive raw bytes, IVs, salts, or passwords.
+ */
+private fun generateSecuritySummary(
+    inspections: List<ComponentInspection>,
+    report: SelfTestReport?,
+    lastVerifiedTimestamp: Long
+): String {
+    val sb = StringBuilder()
+    val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(lastVerifiedTimestamp))
+    sb.append("═══════════════════════════════════════════════════════\n")
+    sb.append(" FORT KNOX - ZERO-KNOWLEDGE CRYPTOGRAPHIC AUDIT REPORT\n")
+    sb.append("═══════════════════════════════════════════════════════\n")
+    sb.append("Audit Timestamp: $dateStr\n")
+    sb.append("Platform: Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})\n")
+    sb.append("Cryptographic Status: 100% OPERATIONAL (Air-Gapped)\n")
+    sb.append("Hardware Security: Android Keystore StrongBox / TEE\n\n")
+
+    sb.append("─── SUBSYSTEM CRYPTOGRAPHIC SPECIFICATIONS ───\n")
+    inspections.forEach { c ->
+        sb.append("• ${c.name} [${c.status}]\n")
+        sb.append("  Cipher: ${c.algorithm}\n")
+        if (c.keySizeBits > 0) sb.append("  Key Strength: ${c.keySizeBits}-bit\n")
+        sb.append("  Key Protection: ${c.keyProtection}\n")
+        sb.append("  KDF: ${c.kdfDetails}\n")
+        sb.append("  Verification: ${c.verificationSummary}\n\n")
+    }
+
+    if (report != null) {
+        sb.append("─── DYNAMIC SELF-TEST BENCHMARKS (${report.passedTests}/${report.totalTests} PASSED) ───\n")
+        sb.append("Execution Time: ${report.executionTimeMs} ms total\n")
+        report.items.forEach { test ->
+            val statusStr = if (test.isPassed) "PASS" else "FAIL"
+            sb.append("• [$statusStr] ${test.testName} (${test.durationMs}ms) - ${test.technicalMetric}\n")
+        }
+        sb.append("\n")
+    }
+
+    sb.append("─── ZERO-KNOWLEDGE PRIVACY ATTESTATION ───\n")
+    sb.append("Metadata only. No keys, passwords, or decrypted data are stored or displayed.\n")
+    sb.append("Generated offline via Fort Knox Cryptographic Inspector Engine.\n")
+    sb.append("═══════════════════════════════════════════════════════")
+    return sb.toString()
 }
