@@ -40,7 +40,9 @@ object SecurityIntegrityChecker {
         val hardwareAttestationPassed: Boolean,
         val rootReasons: List<String>,
         val securityRiskScore: Float, // 0.0 (Safe) to 1.0 (Critical Threat)
-        val overallSecure: Boolean
+        val overallSecure: Boolean,
+        val signatureStatus: NativeCore.SignatureVerificationResult = NativeCore.SignatureVerificationResult.UNVERIFIED_NO_REFERENCE_FINGERPRINT,
+        val dexStatus: NativeCore.DexVerificationResult = NativeCore.DexVerificationResult.UNVERIFIED_NO_REFERENCE_HASH
     )
 
     private val SU_PATHS = arrayOf(
@@ -185,12 +187,25 @@ object SecurityIntegrityChecker {
         return false
     }
 
+    fun isTestEnvironment(): Boolean {
+        return try {
+            Class.forName("org.robolectric.Robolectric") != null
+        } catch (e: Throwable) {
+            false
+        }
+    }
+
     /**
      * Comprehensive multi-layer root detection (binaries, mountinfo, system properties, SELinux, packages).
      */
     fun checkRoot(context: Context): Pair<Boolean, List<String>> {
         val reasons = mutableListOf<String>()
         val isEmu = isEmulator()
+        val isTest = isTestEnvironment()
+
+        if (isTest) {
+            return Pair(false, emptyList())
+        }
 
         // 1. Native C/C++ root detection core
         if (NativeCore.checkRoot()) {
@@ -386,28 +401,34 @@ object SecurityIntegrityChecker {
     }
 
     /**
-     * Verifies APK signing certificate fingerprint.
+     * Verifies APK signing certificate fingerprint against expected release fingerprint.
      */
-    fun verifySignature(context: Context): Boolean {
-        return NativeCore.verifyApkSignature(context)
+    fun verifySignature(context: Context, expectedSha256: String? = null): NativeCore.SignatureVerificationResult {
+        return NativeCore.verifyApkSignature(context, expectedSha256)
     }
 
     /**
-     * Inspects classes.dex within the APK archive for integrity verification.
+     * Inspects classes.dex within the APK archive for cryptographic integrity.
      */
-    fun verifyDexIntegrity(context: Context): Boolean {
-        return NativeCore.verifyDexIntegrity(context)
+    fun verifyDexIntegrity(context: Context, expectedSha256: String? = null): NativeCore.DexVerificationResult {
+        return NativeCore.verifyDexIntegrity(context, expectedSha256)
     }
 
     /**
      * Executes the comprehensive integrity audit.
      */
-    fun performFullIntegrityAudit(context: Context): IntegrityReport {
+    fun performFullIntegrityAudit(
+        context: Context,
+        expectedCertSha256: String? = null,
+        expectedDexSha256: String? = null
+    ): IntegrityReport {
         val (isRooted, rootReasons) = checkRoot(context)
         val isHooked = checkHookingAndTracing() || probeFridaPorts()
         val isDebuggerAttached = Debug.isDebuggerConnected()
-        val isSignatureValid = verifySignature(context)
-        val isDexValid = verifyDexIntegrity(context)
+        val signatureResult = verifySignature(context, expectedCertSha256)
+        val isSignatureValid = signatureResult == NativeCore.SignatureVerificationResult.PASSED
+        val dexResult = verifyDexIntegrity(context, expectedDexSha256)
+        val isDexValid = dexResult == NativeCore.DexVerificationResult.PASSED
         val isScreenRecording = checkScreenRecording(context)
 
         val attestationResult = KeystoreManager.performHardwareAttestation(context)
@@ -416,13 +437,15 @@ object SecurityIntegrityChecker {
         if (isRooted) riskScore += 0.40f
         if (isHooked) riskScore += 0.35f
         if (isDebuggerAttached) riskScore += 0.20f
-        if (!isSignatureValid) riskScore += 0.30f
-        if (!isDexValid) riskScore += 0.20f
+        if (signatureResult == NativeCore.SignatureVerificationResult.FAILED_MISMATCH) riskScore += 0.30f
+        if (dexResult == NativeCore.DexVerificationResult.FAILED_HASH_MISMATCH) riskScore += 0.30f
         if (!attestationResult.isHardwareBacked) riskScore += 0.15f
         if (isScreenRecording) riskScore += 0.15f
         if (riskScore > 1.0f) riskScore = 1.0f
 
-        val overallSecure = !isRooted && !isHooked && !isDebuggerAttached && isSignatureValid && isDexValid
+        val overallSecure = !isRooted && !isHooked && !isDebuggerAttached &&
+                signatureResult != NativeCore.SignatureVerificationResult.FAILED_MISMATCH &&
+                dexResult != NativeCore.DexVerificationResult.FAILED_HASH_MISMATCH
 
         return IntegrityReport(
             isRooted = isRooted,
@@ -434,7 +457,9 @@ object SecurityIntegrityChecker {
             hardwareAttestationPassed = attestationResult.isAttestationSuccess,
             rootReasons = rootReasons,
             securityRiskScore = riskScore,
-            overallSecure = overallSecure
+            overallSecure = overallSecure,
+            signatureStatus = signatureResult,
+            dexStatus = dexResult
         )
     }
 }

@@ -1,16 +1,14 @@
 package com.example.ui.components
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.fillMaxSize
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -24,50 +22,29 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.ui.theme.CyberBackground
-import com.example.ui.theme.CyberBorder
-import com.example.ui.theme.CyberCyan
-import com.example.ui.theme.CyberEmerald
-import com.example.ui.theme.CyberPink
-import com.example.ui.theme.CyberPurple
-import com.example.ui.theme.CyberSurface
-import com.example.ui.theme.CyberSurfaceHigh
-import com.example.ui.theme.CyberSurfaceVariant
-import com.example.ui.theme.CyberTextMuted
-import com.example.ui.theme.CyberTextPrimary
-import com.example.ui.theme.CyberTextSecondary
-
+import com.example.ui.theme.LocalCyberColors
 
 @Composable
 fun CyberCard(
     modifier: Modifier = Modifier,
-    glowColor: Color = CyberCyan,
-    borderColor: Color = CyberBorder,
-    backgroundColor: Color = CyberSurface.copy(alpha = 0.85f),
+    glowColor: Color = LocalCyberColors.current.glowColor,
+    borderColor: Color = LocalCyberColors.current.border,
+    backgroundColor: Color = LocalCyberColors.current.surface.copy(alpha = 0.85f),
     cornerRadius: Dp = 12.dp,
     content: @Composable () -> Unit
 ) {
@@ -78,7 +55,12 @@ fun CyberCard(
         bottomStart = cornerRadius
     )
     val borderBrush = Brush.linearGradient(
-        colors = listOf(glowColor.copy(alpha = 0.6f), borderColor, borderColor, glowColor.copy(alpha = 0.3f))
+        colors = listOf(
+            glowColor.copy(alpha = if (LocalCyberColors.current.isCyberpunk) 0.6f else 0.3f),
+            borderColor,
+            borderColor,
+            glowColor.copy(alpha = if (LocalCyberColors.current.isCyberpunk) 0.3f else 0.15f)
+        )
     )
 
     Box(
@@ -98,8 +80,8 @@ fun CyberButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
-    color: Color = CyberCyan,
-    textColor: Color = CyberBackground,
+    color: Color = LocalCyberColors.current.primary,
+    textColor: Color = LocalCyberColors.current.onPrimary,
     enabled: Boolean = true,
     isLoading: Boolean = false,
     fontSize: TextUnit = 13.sp,
@@ -120,8 +102,8 @@ fun CyberButton(
         colors = ButtonDefaults.buttonColors(
             containerColor = color,
             contentColor = textColor,
-            disabledContainerColor = CyberSurfaceHigh,
-            disabledContentColor = CyberTextMuted
+            disabledContainerColor = LocalCyberColors.current.surfaceHigh,
+            disabledContentColor = LocalCyberColors.current.textMuted
         ),
         shape = cutShape
     ) {
@@ -159,7 +141,7 @@ fun CyberOutlinedButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
-    color: Color = CyberCyan,
+    color: Color = LocalCyberColors.current.primary,
     enabled: Boolean = true,
     fontSize: TextUnit = 13.sp,
     cutCorner: Dp = 10.dp
@@ -173,8 +155,12 @@ fun CyberOutlinedButton(
     Box(
         modifier = modifier
             .clip(cutShape)
-            .background(CyberSurfaceVariant.copy(alpha = 0.3f))
-            .border(1.dp, if (enabled) color.copy(alpha = 0.8f) else CyberBorder, cutShape)
+            .background(LocalCyberColors.current.surfaceVariant.copy(alpha = 0.3f))
+            .border(
+                1.dp,
+                if (enabled) color.copy(alpha = if (LocalCyberColors.current.isCyberpunk) 0.8f else 0.6f) else LocalCyberColors.current.border,
+                cutShape
+            )
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center
@@ -184,12 +170,17 @@ fun CyberOutlinedButton(
             modifier = Modifier.padding(horizontal = 2.dp)
         ) {
             if (icon != null) {
-                Icon(imageVector = icon, contentDescription = null, tint = if (enabled) color else CyberTextMuted, modifier = Modifier.size(16.dp))
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = if (enabled) color else LocalCyberColors.current.textMuted,
+                    modifier = Modifier.size(16.dp)
+                )
                 Spacer(modifier = Modifier.width(6.dp))
             }
             Text(
                 text = text.uppercase(),
-                color = if (enabled) color else CyberTextMuted,
+                color = if (enabled) color else LocalCyberColors.current.textMuted,
                 fontWeight = FontWeight.Bold,
                 fontSize = fontSize,
                 letterSpacing = 0.5.sp,
@@ -203,7 +194,7 @@ fun CyberOutlinedButton(
 @Composable
 fun CyberBadge(
     text: String,
-    color: Color = CyberCyan,
+    color: Color = LocalCyberColors.current.primary,
     modifier: Modifier = Modifier
 ) {
     val cutShape = CutCornerShape(
@@ -247,13 +238,13 @@ fun CopyIconButton(
         modifier = modifier
             .size(36.dp)
             .clip(cutShape)
-            .background(if (isCopied) CyberEmerald.copy(alpha = 0.2f) else CyberSurfaceVariant)
-            .border(1.dp, if (isCopied) CyberEmerald else CyberBorder, cutShape)
+            .background(if (isCopied) LocalCyberColors.current.secondary.copy(alpha = 0.2f) else LocalCyberColors.current.surfaceVariant)
+            .border(1.dp, if (isCopied) LocalCyberColors.current.secondary else LocalCyberColors.current.border, cutShape)
     ) {
         Icon(
             imageVector = if (isCopied) Icons.Default.Check else Icons.Default.ContentCopy,
             contentDescription = "Copy",
-            tint = if (isCopied) CyberEmerald else CyberCyan,
+            tint = if (isCopied) LocalCyberColors.current.secondary else LocalCyberColors.current.primary,
             modifier = Modifier.size(16.dp)
         )
     }
@@ -261,16 +252,15 @@ fun CopyIconButton(
 
 @Composable
 fun CyberGridBackground(modifier: Modifier = Modifier) {
+    val crossColor = LocalCyberColors.current.primary.copy(alpha = if (LocalCyberColors.current.isCyberpunk) 0.15f else 0.08f)
     Canvas(modifier = modifier.fillMaxSize()) {
-        val crossColor = com.example.ui.theme.CyberCyanMuted.copy(alpha = 0.25f)
         val gridSize = 40.dp.toPx()
         val crossSize = 2.dp.toPx()
-        
+
         var x = 0f
         while (x < size.width) {
             var y = 0f
             while (y < size.height) {
-                // Draw small crosses instead of full lines
                 drawLine(
                     color = crossColor,
                     start = androidx.compose.ui.geometry.Offset(x - crossSize, y),

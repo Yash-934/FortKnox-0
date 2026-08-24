@@ -248,22 +248,18 @@ class AutofillAuthActivity : FragmentActivity() {
         }
 
         val allEntries = repository.getAllDecryptedEntries()
-        val targetQuery = (effectiveDomain ?: effectivePkg ?: "").lowercase()
 
-        // Match credentials by domain, package, url, title or folder
-        val matchingEntries = allEntries.filter { entry ->
-            val eTitle = entry.title.lowercase()
-            val eUrl = entry.url.lowercase()
-            val eFolder = entry.folder.lowercase()
-
-            if (targetQuery.isBlank()) true
-            else eUrl.contains(targetQuery) || eTitle.contains(targetQuery) || eFolder.contains(targetQuery) ||
-                 (effectiveDomain != null && eUrl.contains(effectiveDomain.lowercase())) ||
-                 (effectivePkg != null && (eUrl.contains(effectivePkg.lowercase()) || eFolder.contains(effectivePkg.lowercase())))
-        }.ifEmpty {
-            allEntries.filter { it.category == VaultCategory.LOGINS }
-        }.ifEmpty {
-            allEntries
+        // Match credentials by strict domain or package matching
+        val matchingEntries = if (!effectiveDomain.isNullOrBlank() || !effectivePkg.isNullOrBlank()) {
+            allEntries.filter { entry ->
+                val domainMatch = VaultAutofillService.isDomainMatch(effectiveDomain, entry.url)
+                val pkgMatch = !effectivePkg.isNullOrBlank() && (
+                    !entry.url.isNullOrBlank() && entry.url.equals(effectivePkg, ignoreCase = true)
+                )
+                domainMatch || pkgMatch
+            }
+        } else {
+            emptyList()
         }
 
         if (matchingEntries.isEmpty()) {

@@ -6,6 +6,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.lifecycleScope
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import com.example.data.preferences.ThemeConfig
 import com.example.data.repository.VaultRepository
 import com.example.lifecycle.VaultLifecycleObserver
 import com.example.security.SecurityIntegrityChecker
@@ -42,7 +45,11 @@ class MainActivity : FragmentActivity() {
         val integrityReport = SecurityIntegrityChecker.performFullIntegrityAudit(this)
 
         setContent {
-            MyApplicationTheme {
+            val themeConfig by vaultRepository.themePreferences.themeConfigFlow.collectAsState(
+                initial = ThemeConfig()
+            )
+
+            MyApplicationTheme(themeConfig = themeConfig) {
                 MainAppScreen(
                     repository = vaultRepository,
                     integrityReport = integrityReport

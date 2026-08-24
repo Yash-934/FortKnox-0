@@ -115,6 +115,36 @@ class VaultAutofillService : AutofillService() {
             }
         }
 
+        fun extractCanonicalHost(urlOrHost: String?): String? {
+            if (urlOrHost.isNullOrBlank()) return null
+            val cleaned = urlOrHost.trim().lowercase()
+            val host = try {
+                if (cleaned.startsWith("http://") || cleaned.startsWith("https://")) {
+                    java.net.URI(cleaned).host
+                } else {
+                    java.net.URI("https://$cleaned").host
+                }
+            } catch (e: Exception) {
+                null
+            } ?: cleaned.split("/").firstOrNull()?.split(":")?.firstOrNull()
+            return host?.removePrefix("www.")?.trimEnd('.')
+        }
+
+        /**
+         * Strictly checks if the requesting origin matches the stored credential URL.
+         * Enforces canonical eTLD/domain and subdomain matching.
+         * Defends against prefix, substring, and suffix phishing attacks (e.g. attacker-github.com or github.com.attacker.com).
+         */
+        fun isDomainMatch(requestOrigin: String?, entryUrl: String?): Boolean {
+            val reqHost = extractCanonicalHost(requestOrigin) ?: return false
+            val entryHost = extractCanonicalHost(entryUrl) ?: return false
+            if (reqHost.isEmpty() || entryHost.isEmpty()) return false
+            if (reqHost == entryHost) return true
+            if (reqHost.endsWith(".$entryHost")) return true
+            if (entryHost.endsWith(".$reqHost")) return true
+            return false
+        }
+
         /**
          * Recursively parses the AssistStructure view hierarchy (Native apps, DuckDuckGo, Chrome, Edge, WebViews).
          * Uses multi-signal heuristics to identify username/email/password fields accurately.
@@ -409,22 +439,23 @@ class VaultAutofillService : AutofillService() {
                         )
                     }
                 } else {
-                    // Vault is unlocked - query stored credentials
+                    // Vault is unlocked - query stored credentials using strict canonical origin matching
                     val entries = repository.getAllDecryptedEntries()
-                    val matched = entries.filter { entry ->
-                        val domainMatch = !parsed.webDomain.isNullOrBlank() &&
-                                (entry.url.contains(parsed.webDomain!!, ignoreCase = true) ||
-                                 entry.title.contains(parsed.webDomain!!, ignoreCase = true) ||
-                                 entry.folder.contains(parsed.webDomain!!, ignoreCase = true))
-                        val pkgMatch = !parsed.packageName.isNullOrBlank() &&
-                                (entry.url.contains(parsed.packageName!!, ignoreCase = true) ||
-                                 entry.title.contains(parsed.packageName!!, ignoreCase = true))
-                        domainMatch || pkgMatch
-                    }.ifEmpty {
-                        entries.filter { it.category == VaultCategory.LOGINS }
-                    }.ifEmpty {
-                        entries
-                    }.take(8)
+                    val reqDomain = parsed.webDomain
+                    val reqPkg = parsed.packageName
+
+                    val matched = if (!reqDomain.isNullOrBlank() || !reqPkg.isNullOrBlank()) {
+                        entries.filter { entry ->
+                            val domainMatch = isDomainMatch(reqDomain, entry.url)
+                            val pkgMatch = !reqPkg.isNullOrBlank() && (
+                                !entry.url.isNullOrBlank() && entry.url.equals(reqPkg, ignoreCase = true)
+                            )
+                            domainMatch || pkgMatch
+                        }.take(8)
+                    } else {
+                        // Ambiguous or missing origin: never dump credentials
+                        emptyList()
+                    }
 
                     AutofillLogger.log(applicationContext, "onFillRequest UNLOCKED", "Found ${matched.size} matching credentials.")
 

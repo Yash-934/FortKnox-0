@@ -13,6 +13,7 @@ import androidx.room.PrimaryKey
 data class EncryptedVaultEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
+    val recordUid: String = java.util.UUID.randomUUID().toString(),
     val title: String,
     val category: String,
     val isFavorite: Boolean,
@@ -26,6 +27,7 @@ data class EncryptedVaultEntity(
         if (this === other) return true
         if (other !is EncryptedVaultEntity) return false
         if (id != other.id) return false
+        if (recordUid != other.recordUid) return false
         if (title != other.title) return false
         if (category != other.category) return false
         if (isFavorite != other.isFavorite) return false
@@ -39,6 +41,7 @@ data class EncryptedVaultEntity(
 
     override fun hashCode(): Int {
         var result = id.hashCode()
+        result = 31 * result + recordUid.hashCode()
         result = 31 * result + title.hashCode()
         result = 31 * result + category.hashCode()
         result = 31 * result + isFavorite.hashCode()

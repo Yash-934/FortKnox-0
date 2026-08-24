@@ -64,7 +64,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.preferences.CyberpunkTemplate
+import com.example.data.preferences.ThemeConfig
 import com.example.data.preferences.VaultPreferences
+import com.example.ui.components.CyberBadge
 import com.example.ui.components.CyberButton
 import com.example.ui.components.CyberCard
 import com.example.ui.components.CyberOutlinedButton
@@ -80,10 +83,14 @@ import com.example.ui.theme.CyberSurfaceVariant
 import com.example.ui.theme.CyberTextMuted
 import com.example.ui.theme.CyberTextPrimary
 import com.example.ui.theme.CyberTextSecondary
+import com.example.ui.theme.LocalCyberColors
 
 @Composable
 fun SettingsScreen(
     config: VaultPreferences.VaultConfig,
+    themeConfig: ThemeConfig = ThemeConfig(),
+    onToggleCyberpunkMode: (Boolean) -> Unit = {},
+    onSelectCyberpunkTemplate: (CyberpunkTemplate) -> Unit = {},
     onSetAutoLockTimeout: (Int) -> Unit,
     onToggleBiometrics: (Boolean) -> Unit,
     onToggleParanoid2Fa: (Boolean) -> Unit = {},
@@ -173,12 +180,156 @@ fun SettingsScreen(
         )
         Text(
             text = "HARDWARE-BACKED VAULT PROTOCOLS (PHASE 3)",
-            color = CyberCyan,
+            color = LocalCyberColors.current.primary,
             fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
             letterSpacing = 1.sp,
             modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
         )
+
+        // ==========================================
+        // CYBERPUNK FUTURISTIC THEME ENGINE
+        // ==========================================
+        CyberCard(
+            modifier = Modifier.fillMaxWidth(),
+            glowColor = LocalCyberColors.current.primary,
+            borderColor = if (themeConfig.isCyberpunkModeEnabled) LocalCyberColors.current.primary.copy(alpha = 0.5f) else LocalCyberColors.current.border
+        ) {
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Cyberpunk Futuristic Mode",
+                                color = LocalCyberColors.current.textPrimary,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            if (themeConfig.isCyberpunkModeEnabled) {
+                                CyberBadge(
+                                    text = "HUD ACTIVE",
+                                    color = LocalCyberColors.current.primary
+                                )
+                            }
+                        }
+                        Text(
+                            text = "Shift UI into futuristic terminal mode with neon glows, scanlines & HUD palettes.",
+                            color = LocalCyberColors.current.textMuted,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
+                    Switch(
+                        checked = themeConfig.isCyberpunkModeEnabled,
+                        onCheckedChange = { onToggleCyberpunkMode(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = LocalCyberColors.current.background,
+                            checkedTrackColor = LocalCyberColors.current.primary,
+                            uncheckedTrackColor = LocalCyberColors.current.surfaceVariant
+                        )
+                    )
+                }
+
+                if (themeConfig.isCyberpunkModeEnabled) {
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(
+                        text = "SELECTABLE THEME TEMPLATES:",
+                        color = LocalCyberColors.current.textSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        CyberpunkTemplate.values().forEach { template ->
+                            val isSelected = themeConfig.selectedTemplate == template
+                            val templateShape = CutCornerShape(
+                                topStart = 6.dp,
+                                topEnd = 0.dp,
+                                bottomEnd = 6.dp,
+                                bottomStart = 0.dp
+                            )
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(templateShape)
+                                    .clickable { onSelectCyberpunkTemplate(template) },
+                                color = if (isSelected) template.accentColor.copy(alpha = 0.15f) else LocalCyberColors.current.surfaceVariant.copy(alpha = 0.5f),
+                                border = BorderStroke(
+                                    if (isSelected) 1.5.dp else 1.dp,
+                                    if (isSelected) template.accentColor else LocalCyberColors.current.border
+                                ),
+                                shape = templateShape
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        // Color Preview Dot
+                                        Box(
+                                            modifier = Modifier
+                                                .size(14.dp)
+                                                .clip(CutCornerShape(3.dp))
+                                                .background(template.accentColor)
+                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Column {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = template.title,
+                                                    color = if (isSelected) template.accentColor else LocalCyberColors.current.textPrimary,
+                                                    fontSize = 13.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontFamily = FontFamily.Monospace
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = "(${template.accentName})",
+                                                    color = template.accentColor,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                            }
+                                            Text(
+                                                text = template.description,
+                                                color = LocalCyberColors.current.textMuted,
+                                                fontSize = 11.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+
+                                    if (isSelected) {
+                                        CyberBadge(
+                                            text = "ACTIVE",
+                                            color = template.accentColor
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
 
         // Security Scanner & Audit Quick Card
         CyberCard(modifier = Modifier.fillMaxWidth()) {

@@ -34,6 +34,11 @@ class VaultPreferences(private val context: Context) {
         val KEY_PHOTO_CAPTURE_ENABLED = booleanPreferencesKey("is_photo_capture_enabled")
         val KEY_PHOTO_TRIGGER_THRESHOLD = intPreferencesKey("photo_trigger_threshold")
         val KEY_PARANOID_2FA = booleanPreferencesKey("is_paranoid_2fa_enabled")
+        val KEY_2FA_SHARE_A_SALT = stringPreferencesKey("twofa_share_a_salt")
+        val KEY_2FA_WRAPPED_SHARE_A = stringPreferencesKey("twofa_wrapped_share_a")
+        val KEY_2FA_WRAPPED_SHARE_A_IV = stringPreferencesKey("twofa_wrapped_share_a_iv")
+        val KEY_2FA_WRAPPED_SHARE_B = stringPreferencesKey("twofa_wrapped_share_b")
+        val KEY_2FA_WRAPPED_SHARE_B_IV = stringPreferencesKey("twofa_wrapped_share_b_iv")
         val KEY_DEVICE_BOUND_BACKUP = booleanPreferencesKey("is_device_bound_backup")
         val KEY_PERIODIC_ROOT_CHECK = booleanPreferencesKey("is_periodic_root_check_enabled")
         val KEY_SCREEN_RECORDING_DETECTION = booleanPreferencesKey("is_screen_recording_detection_enabled")
@@ -57,6 +62,11 @@ class VaultPreferences(private val context: Context) {
         val isPhotoCaptureEnabled: Boolean = true,
         val photoTriggerThreshold: Int = 1,
         val isParanoid2FaEnabled: Boolean = false,
+        val twoFaShareASalt: String? = null,
+        val twoFaWrappedShareA: String? = null,
+        val twoFaWrappedShareAIv: String? = null,
+        val twoFaWrappedShareB: String? = null,
+        val twoFaWrappedShareBIv: String? = null,
         val isDeviceBoundBackup: Boolean = false,
         val isPeriodicRootCheckEnabled: Boolean = true,
         val isScreenRecordingDetectionEnabled: Boolean = true
@@ -81,10 +91,41 @@ class VaultPreferences(private val context: Context) {
             isPhotoCaptureEnabled = prefs[KEY_PHOTO_CAPTURE_ENABLED] ?: true,
             photoTriggerThreshold = prefs[KEY_PHOTO_TRIGGER_THRESHOLD] ?: 1,
             isParanoid2FaEnabled = prefs[KEY_PARANOID_2FA] ?: false,
+            twoFaShareASalt = prefs[KEY_2FA_SHARE_A_SALT],
+            twoFaWrappedShareA = prefs[KEY_2FA_WRAPPED_SHARE_A],
+            twoFaWrappedShareAIv = prefs[KEY_2FA_WRAPPED_SHARE_A_IV],
+            twoFaWrappedShareB = prefs[KEY_2FA_WRAPPED_SHARE_B],
+            twoFaWrappedShareBIv = prefs[KEY_2FA_WRAPPED_SHARE_B_IV],
             isDeviceBoundBackup = prefs[KEY_DEVICE_BOUND_BACKUP] ?: false,
             isPeriodicRootCheckEnabled = prefs[KEY_PERIODIC_ROOT_CHECK] ?: true,
             isScreenRecordingDetectionEnabled = prefs[KEY_SCREEN_RECORDING_DETECTION] ?: true
         )
+    }
+
+    suspend fun save2FaShareConfig(
+        saltA: String?,
+        wrappedShareA: String?,
+        wrappedShareAIv: String?,
+        wrappedShareB: String?,
+        wrappedShareBIv: String?,
+        enabled: Boolean
+    ) {
+        context.vaultDataStore.edit { prefs ->
+            prefs[KEY_PARANOID_2FA] = enabled
+            if (saltA != null && wrappedShareA != null && wrappedShareAIv != null && wrappedShareB != null && wrappedShareBIv != null) {
+                prefs[KEY_2FA_SHARE_A_SALT] = saltA
+                prefs[KEY_2FA_WRAPPED_SHARE_A] = wrappedShareA
+                prefs[KEY_2FA_WRAPPED_SHARE_A_IV] = wrappedShareAIv
+                prefs[KEY_2FA_WRAPPED_SHARE_B] = wrappedShareB
+                prefs[KEY_2FA_WRAPPED_SHARE_B_IV] = wrappedShareBIv
+            } else {
+                prefs.remove(KEY_2FA_SHARE_A_SALT)
+                prefs.remove(KEY_2FA_WRAPPED_SHARE_A)
+                prefs.remove(KEY_2FA_WRAPPED_SHARE_A_IV)
+                prefs.remove(KEY_2FA_WRAPPED_SHARE_B)
+                prefs.remove(KEY_2FA_WRAPPED_SHARE_B_IV)
+            }
+        }
     }
 
     suspend fun saveMasterKeyConfig(

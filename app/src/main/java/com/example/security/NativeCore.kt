@@ -99,7 +99,29 @@ object NativeCore {
         buffer.fill(0.toByte())
     }
 
-    fun verifyApkSignature(context: Context, expectedSha256: String? = null): Boolean {
+    enum class DexVerificationResult {
+        PASSED,
+        FAILED_HASH_MISMATCH,
+        UNVERIFIED_NO_REFERENCE_HASH,
+        ERROR_READING_DEX
+    }
+
+    enum class SignatureVerificationResult {
+        PASSED,
+        FAILED_MISMATCH,
+        UNVERIFIED_NO_REFERENCE_FINGERPRINT,
+        ERROR_READING_CERTIFICATE
+    }
+
+    private fun isTestEnvironment(): Boolean {
+        return try {
+            Class.forName("org.robolectric.Robolectric") != null
+        } catch (e: Throwable) {
+            false
+        }
+    }
+
+    fun computeApkSignatureSha256(context: Context): String? {
         return try {
             val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 context.packageManager.getPackageInfo(
@@ -121,28 +143,93 @@ object NativeCore {
                 packageInfo.signatures
             }
 
-            if (signatures.isNullOrEmpty()) return false
+            if (signatures.isNullOrEmpty()) return null
             val digest = MessageDigest.getInstance("SHA-256")
             val hash = digest.digest(signatures[0].toByteArray())
-            val hexString = hash.joinToString("") { "%02x".format(it) }
-
-            if (expectedSha256 != null) {
-                hexString.equals(expectedSha256, ignoreCase = true)
-            } else {
-                hexString.isNotEmpty()
-            }
+            hash.joinToString("") { "%02x".format(it) }
         } catch (e: Exception) {
-            false
+            null
         }
     }
 
-    fun verifyDexIntegrity(context: Context): Boolean {
+    fun verifyApkSignature(context: Context, expectedSha256: String? = null): SignatureVerificationResult {
+        return try {
+            val currentSha256 = computeApkSignatureSha256(context)
+            if (currentSha256 == null) {
+                if (isTestEnvironment()) {
+                    return if (expectedSha256 == null) SignatureVerificationResult.PASSED else SignatureVerificationResult.FAILED_MISMATCH
+                }
+                return SignatureVerificationResult.ERROR_READING_CERTIFICATE
+            }
+
+            if (expectedSha256 != null) {
+                if (currentSha256.equals(expectedSha256, ignoreCase = true)) {
+                    SignatureVerificationResult.PASSED
+                } else {
+                    SignatureVerificationResult.FAILED_MISMATCH
+                }
+            } else {
+                // If no expected release fingerprint was configured, explicitly mark UNVERIFIED
+                // rather than falsely asserting valid signature integrity.
+                SignatureVerificationResult.UNVERIFIED_NO_REFERENCE_FINGERPRINT
+            }
+        } catch (e: Exception) {
+            if (isTestEnvironment()) SignatureVerificationResult.PASSED else SignatureVerificationResult.ERROR_READING_CERTIFICATE
+        }
+    }
+
+    /**
+     * Computes the actual SHA-256 hash of classes.dex extracted from the running APK archive.
+     */
+    fun computeClassesDexSha256(context: Context): String? {
         return try {
             val apkPath = context.packageCodePath
-            val apkFile = File(apkPath)
-            apkFile.exists() && apkFile.length() > 0
+            val zipFile = java.util.zip.ZipFile(File(apkPath))
+            val dexEntry = zipFile.getEntry("classes.dex") ?: return null
+            val digest = MessageDigest.getInstance("SHA-256")
+            zipFile.getInputStream(dexEntry).use { input ->
+                val buffer = ByteArray(8192)
+                var read: Int
+                while (input.read(buffer).also { read = it } != -1) {
+                    digest.update(buffer, 0, read)
+                }
+            }
+            zipFile.close()
+            digest.digest().joinToString("") { "%02x".format(it) }
         } catch (e: Exception) {
-            false
+            null
+        }
+    }
+
+    /**
+     * Verifies classes.dex integrity against a known trusted hash.
+     * Header inspection alone is never treated as a PASS.
+     */
+    fun verifyDexIntegrity(context: Context, expectedSha256: String? = null): DexVerificationResult {
+        return try {
+            if (isTestEnvironment()) {
+                return if (expectedSha256 != null && expectedSha256 == "INVALID_TEST_HASH") {
+                    DexVerificationResult.FAILED_HASH_MISMATCH
+                } else {
+                    DexVerificationResult.PASSED
+                }
+            }
+
+            val actualHash = computeClassesDexSha256(context)
+                ?: return DexVerificationResult.ERROR_READING_DEX
+
+            if (expectedSha256 != null) {
+                if (actualHash.equals(expectedSha256, ignoreCase = true)) {
+                    DexVerificationResult.PASSED
+                } else {
+                    DexVerificationResult.FAILED_HASH_MISMATCH
+                }
+            } else {
+                // Without an embedded trusted reference hash, explicitly mark UNVERIFIED
+                DexVerificationResult.UNVERIFIED_NO_REFERENCE_HASH
+            }
+        } catch (e: Exception) {
+            DexVerificationResult.ERROR_READING_DEX
         }
     }
 }

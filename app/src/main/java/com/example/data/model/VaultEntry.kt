@@ -5,6 +5,7 @@ package com.example.data.model
  */
 data class VaultEntry(
     val id: Long = 0,
+    val recordUid: String = java.util.UUID.randomUUID().toString(),
     val title: String,
     val username: String = "",
     val password: String = "",

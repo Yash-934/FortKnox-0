@@ -68,7 +68,7 @@
         <!-- Dedicated Lightweight Autofill Authentication Activity -->
         <activity
             android:name="com.example.autofill.AutofillAuthActivity"
-            android:exported="true"
+            android:exported="false"
             android:theme="@style/Theme.AutofillDialog"
             android:excludeFromRecents="true"
             android:taskAffinity=""

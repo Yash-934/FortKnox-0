@@ -393,13 +393,13 @@ object KeystoreManager {
             )
         } catch (e: Exception) {
             AttestationResult(
-                isHardwareBacked = true,
-                isAttestationSuccess = true,
-                verifiedBootState = "Verified (TEE)",
-                isDeviceLocked = true,
-                securityLevel = "TEE",
-                certificatesCount = 1,
-                details = "Attestation cert present (fallback parsing: ${e.message})"
+                isHardwareBacked = false,
+                isAttestationSuccess = false,
+                verifiedBootState = "Unknown / Parsing Failed",
+                isDeviceLocked = false,
+                securityLevel = "Software / Unverified",
+                certificatesCount = 0,
+                details = "Attestation parsing failed: ${e.message}"
             )
         }
     }

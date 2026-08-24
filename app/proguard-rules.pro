@@ -20,3 +20,24 @@
 -keep class com.example.autofill.VaultAutofillService { *; }
 -keep class com.example.autofill.** { *; }
 
+# Preserve JNI native method signatures
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
+
+# Preserve Room entities and TypeConverters
+-keep class * extends androidx.room.RoomDatabase
+-keep @androidx.room.Entity class * { *; }
+-keep @androidx.room.Dao interface * { *; }
+
+# Preserve BouncyCastle cryptographic engines
+-keep class org.bouncycastle.** { *; }
+-dontwarn org.bouncycastle.**
+
+# Strip verbose/debug logs in release builds
+-assumenosideeffects class android.util.Log {
+    public static boolean isLoggable(java.lang.String, int);
+    public static int v(...);
+    public static int d(...);
+}
+

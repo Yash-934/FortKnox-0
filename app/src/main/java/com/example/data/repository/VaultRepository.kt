@@ -12,6 +12,7 @@ import com.example.data.model.EncryptedVaultEntity
 import com.example.data.model.IntrusionLogEntity
 import com.example.data.model.VaultCategory
 import com.example.data.model.VaultEntry
+import com.example.data.preferences.ThemePreferences
 import com.example.data.preferences.VaultPreferences
 import com.example.security.CryptoEngine
 import com.example.security.KeystoreManager
@@ -36,7 +37,8 @@ class VaultRepository(
     private val vaultDao: VaultDao = VaultDatabase.getDatabase(context).vaultDao(),
     private val intrusionLogDao: IntrusionLogDao = VaultDatabase.getDatabase(context).intrusionLogDao(),
     private val decoyNoteDao: DecoyNoteDao = VaultDatabase.getDatabase(context).decoyNoteDao(),
-    val preferences: VaultPreferences = VaultPreferences(context)
+    val preferences: VaultPreferences = VaultPreferences(context),
+    val themePreferences: ThemePreferences = ThemePreferences(context)
 ) {
 
     private val _isUnlocked = MutableStateFlow(false)
@@ -44,7 +46,7 @@ class VaultRepository(
 
     // In-memory decrypted Data Encryption Key (DEK). Zeroed on lock.
     private var activeDek: ByteArray? = null
-    private var pending2FaDek: ByteArray? = null
+    private var pending2FaShareA: ByteArray? = null
 
     val intrusionLogsFlow: Flow<List<IntrusionLogEntity>> = intrusionLogDao.getAllLogs()
     val decoyNotesFlow: Flow<List<DecoyNoteEntity>> = decoyNoteDao.getAllNotes()
@@ -226,75 +228,6 @@ class VaultRepository(
             activeDek = newDek
             _isUnlocked.value = true
 
-            // Insert sample entries for testing if database is empty
-            if (vaultDao.getAllEntriesSnapshot().isEmpty()) {
-                val demoItems = listOf(
-                    VaultEntry(
-                        title = "GitHub - Enterprise Dev",
-                        username = "alex-dev-sec",
-                        password = "ghp_98yTvX#29LmQ4zR7810@k",
-                        url = "https://github.com",
-                        notes = "SSH and token key repository for enterprise code",
-                        category = VaultCategory.LOGINS,
-                        folder = "GitHub",
-                        isFavorite = true
-                    ),
-                    VaultEntry(
-                        title = "GitHub - OpenSource / Personal",
-                        username = "alex-opensource",
-                        password = "gho_kP9#vX29LmQ4zR89@open",
-                        url = "https://github.com",
-                        notes = "Personal repositories & public open source keys",
-                        category = VaultCategory.LOGINS,
-                        folder = "GitHub",
-                        isFavorite = true
-                    ),
-                    VaultEntry(
-                        title = "Google Workspace",
-                        username = "alex.security@gmail.com",
-                        password = "k8#P9!vX\$mZ2@qW9",
-                        url = "https://accounts.google.com",
-                        notes = "Primary 2FA authenticated workspace account",
-                        category = VaultCategory.LOGINS,
-                        folder = "Google",
-                        isFavorite = true
-                    ),
-                    VaultEntry(
-                        title = "Google Cloud Console",
-                        username = "gcp-alex-admin@company.com",
-                        password = "Gcp#Vault!2026Secure",
-                        url = "https://console.cloud.google.com",
-                        notes = "Production Kubernetes cluster admin",
-                        category = VaultCategory.LOGINS,
-                        folder = "Google",
-                        isFavorite = false
-                    ),
-                    VaultEntry(
-                        title = "AWS Production Console",
-                        username = "admin-root-prod",
-                        password = "A#99_vL!72xPm@04-Root",
-                        url = "https://aws.amazon.com",
-                        notes = "IAM root console access with hardware MFA",
-                        category = VaultCategory.LOGINS,
-                        folder = "AWS Cloud",
-                        isFavorite = false
-                    ),
-                    VaultEntry(
-                        title = "Personal Netflix",
-                        username = "alex.entertainment@gmail.com",
-                        password = "Nf#Stream!2026",
-                        url = "https://netflix.com",
-                        notes = "Family 4K subscription",
-                        category = VaultCategory.LOGINS,
-                        folder = "Entertainment",
-                        isFavorite = false
-                    )
-                )
-                for (item in demoItems) {
-                    saveEntry(item)
-                }
-            }
-
             CryptoEngine.wipe(kek)
             true
         } catch (e: Exception) {
@@ -379,7 +312,7 @@ class VaultRepository(
 
     /**
      * Validates the first factor (Master PIN/Password) in Paranoid 2FA mode.
-     * If valid, derives and stores the unwrapped DEK locked in RAM with mlock,
+     * If valid, derives and stores the unwrapped Share A (or interim DEK) locked in RAM with mlock,
      * awaiting the second biometric factor.
      */
     suspend fun validateMasterPasswordFirstFactor(password: CharArray): Result<Unit> = withContext(Dispatchers.Default) {
@@ -395,9 +328,14 @@ class VaultRepository(
                 return@withContext Result.failure(IllegalStateException("Enclave locked out for ${remainingSec}s due to failed attempts"))
             }
 
-            val salt = Base64.decode(config.masterSalt, Base64.DEFAULT)
-            val wrappedDekBytes = Base64.decode(config.wrappedDek, Base64.DEFAULT)
-            val wrappedDekIvBytes = Base64.decode(config.wrappedDekIv, Base64.DEFAULT)
+            // If dedicated 2FA Share A is configured, unwrap Share A; otherwise unwrap master wrappedDek
+            val saltBase64 = config.twoFaShareASalt ?: config.masterSalt
+            val wrappedBase64 = config.twoFaWrappedShareA ?: config.wrappedDek
+            val wrappedIvBase64 = config.twoFaWrappedShareAIv ?: config.wrappedDekIv
+
+            val salt = Base64.decode(saltBase64, Base64.DEFAULT)
+            val wrappedBytes = Base64.decode(wrappedBase64, Base64.DEFAULT)
+            val wrappedIvBytes = Base64.decode(wrappedIvBase64, Base64.DEFAULT)
 
             val kek = CryptoEngine.deriveArgon2idKey(
                 password = password,
@@ -407,8 +345,8 @@ class VaultRepository(
                 parallelism = 1
             )
 
-            val wrappedPayload = CryptoEngine.EncryptedPayload(iv = wrappedDekIvBytes, ciphertext = wrappedDekBytes)
-            val unwrappedDek = try {
+            val wrappedPayload = CryptoEngine.EncryptedPayload(iv = wrappedIvBytes, ciphertext = wrappedBytes)
+            val unwrappedShare = try {
                 CryptoEngine.unwrapDEK(wrappedPayload, kek)
             } catch (e: Exception) {
                 val attempts = preferences.incrementFailedAttempts()
@@ -434,14 +372,14 @@ class VaultRepository(
             }
 
             // Clean previous pending if any
-            pending2FaDek?.let {
-                CryptoEngine.wipe(it)
-                com.example.security.NativeCore.munlock(it)
+            pending2FaShareA?.let { share: ByteArray ->
+                CryptoEngine.wipe(share)
+                com.example.security.NativeCore.munlock(share)
             }
 
-            // Lock derived DEK in memory
-            com.example.security.NativeCore.mlock(unwrappedDek)
-            pending2FaDek = unwrappedDek
+            // Lock derived share in memory
+            com.example.security.NativeCore.mlock(unwrappedShare)
+            pending2FaShareA = unwrappedShare
             CryptoEngine.wipe(kek)
             Result.success(Unit)
         } catch (e: Exception) {
@@ -453,25 +391,55 @@ class VaultRepository(
 
     /**
      * Completes 2FA unlock after both Factor 1 (PIN) and Factor 2 (Biometric) succeed.
+     * If cryptographic 2FA share splitting is active, reconstructs DEK = ShareA XOR ShareB.
      */
-    suspend fun complete2FaUnlock(): Result<Unit> = withContext(Dispatchers.Default) {
-        val dek = pending2FaDek ?: return@withContext Result.failure(IllegalStateException("No pending 2FA authentication"))
-        activeDek = dek
-        pending2FaDek = null
-        _isUnlocked.value = true
-        preferences.resetFailedAttempts()
-        Result.success(Unit)
+    suspend fun complete2FaUnlock(biometricCipher: Cipher? = null): Result<Unit> = withContext(Dispatchers.Default) {
+        val shareA = pending2FaShareA ?: return@withContext Result.failure(IllegalStateException("No pending 2FA authentication"))
+        val config = preferences.configFlow.first()
+
+        try {
+            if (config.isParanoid2FaEnabled) {
+                val wrappedShareB = config.twoFaWrappedShareB
+                    ?: return@withContext Result.failure(IllegalStateException("Paranoid 2FA Share B configuration is missing"))
+                if (biometricCipher == null) {
+                    return@withContext Result.failure(IllegalStateException("Biometric cipher is required to complete Paranoid 2FA"))
+                }
+
+                val wrappedShareBBytes = Base64.decode(wrappedShareB, Base64.DEFAULT)
+                val shareB = KeystoreManager.unwrapDEKWithBiometricCipher(biometricCipher, wrappedShareBBytes)
+
+                val reconstructedDek = ByteArray(32) { i: Int ->
+                    (shareA[i].toInt() xor shareB[i].toInt()).toByte()
+                }
+                CryptoEngine.wipe(shareB)
+
+                activeDek = reconstructedDek
+            } else {
+                activeDek = shareA
+            }
+
+            pending2FaShareA?.let { share: ByteArray ->
+                if (share !== activeDek) CryptoEngine.wipe(share)
+                com.example.security.NativeCore.munlock(share)
+            }
+            pending2FaShareA = null
+            _isUnlocked.value = true
+            preferences.resetFailedAttempts()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
     /**
-     * Cancels 2FA unlock and zero-wipes the intermediate DEK buffer.
+     * Cancels 2FA unlock and zero-wipes the intermediate Share A buffer.
      */
     fun cancel2FaUnlock() {
-        pending2FaDek?.let {
-            CryptoEngine.wipe(it)
-            com.example.security.NativeCore.munlock(it)
+        pending2FaShareA?.let { share: ByteArray ->
+            CryptoEngine.wipe(share)
+            com.example.security.NativeCore.munlock(share)
         }
-        pending2FaDek = null
+        pending2FaShareA = null
     }
 
     /**
@@ -498,6 +466,77 @@ class VaultRepository(
     suspend fun disableBiometricUnlock() {
         KeystoreManager.deleteBiometricKey()
         preferences.saveBiometricConfig(null, null, false)
+        preferences.save2FaShareConfig(null, null, null, null, null, false)
+    }
+
+    /**
+     * Configures Paranoid 2FA Mode using cryptographic secret sharing.
+     * DEK is split into two independent 256-bit shares:
+     * - Share A: encrypted with Argon2id Master PIN/Password KEK
+     * - Share B: wrapped with Keystore Hardware Biometric Cipher
+     * Mathematically, neither share alone reveals ANY information about the DEK (DEK = ShareA XOR ShareB).
+     */
+    suspend fun enableParanoid2Fa(masterPassword: CharArray, biometricCipher: Cipher): Boolean = withContext(Dispatchers.Default) {
+        val currentDek = activeDek ?: return@withContext false
+        try {
+            // 1. Generate 32-byte cryptographically secure random Share B
+            val shareB = CryptoEngine.generateDEK()
+
+            // 2. Compute Share A = DEK XOR Share B
+            val shareA = ByteArray(32) { i ->
+                (currentDek[i].toInt() xor shareB[i].toInt()).toByte()
+            }
+
+            // 3. Derive Argon2id KEK for Share A
+            val saltA = CryptoEngine.generateSalt(16)
+            val kekA = CryptoEngine.deriveArgon2idKey(
+                password = masterPassword,
+                salt = saltA,
+                memoryKb = 65536,
+                iterations = 3,
+                parallelism = 1
+            )
+
+            // 4. Wrap Share A with KEK
+            val wrappedShareA = CryptoEngine.wrapDEK(shareA, kekA)
+            val saltABase64 = Base64.encodeToString(saltA, Base64.NO_WRAP)
+            val wrappedShareABase64 = Base64.encodeToString(wrappedShareA.ciphertext, Base64.NO_WRAP)
+            val wrappedShareAIvBase64 = Base64.encodeToString(wrappedShareA.iv, Base64.NO_WRAP)
+
+            // 5. Wrap Share B with Keystore Biometric Cipher
+            val wrappedShareB = KeystoreManager.wrapDEKWithBiometricCipher(biometricCipher, shareB)
+            val wrappedShareBBase64 = Base64.encodeToString(wrappedShareB.ciphertext, Base64.NO_WRAP)
+            val wrappedShareBIvBase64 = Base64.encodeToString(wrappedShareB.iv, Base64.NO_WRAP)
+
+            // 6. Save split-share configuration in DataStore
+            preferences.save2FaShareConfig(
+                saltA = saltABase64,
+                wrappedShareA = wrappedShareABase64,
+                wrappedShareAIv = wrappedShareAIvBase64,
+                wrappedShareB = wrappedShareBBase64,
+                wrappedShareBIv = wrappedShareBIvBase64,
+                enabled = true
+            )
+
+            // 7. Secure wipe temporary buffers
+            CryptoEngine.wipe(shareA)
+            CryptoEngine.wipe(shareB)
+            CryptoEngine.wipe(kekA)
+
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        } finally {
+            CryptoEngine.wipe(masterPassword)
+        }
+    }
+
+    /**
+     * Disables Paranoid 2FA mode.
+     */
+    suspend fun disableParanoid2Fa() = withContext(Dispatchers.IO) {
+        preferences.save2FaShareConfig(null, null, null, null, null, false)
     }
 
     /**
@@ -617,7 +656,7 @@ class VaultRepository(
     }
 
     /**
-     * Encrypts and saves or updates an entry.
+     * Encrypts and saves or updates an entry with immutable recordUid AAD binding.
      */
     suspend fun saveEntry(entry: VaultEntry): Long = withContext(Dispatchers.Default) {
         val currentDek = activeDek ?: throw IllegalStateException("Vault is locked")
@@ -630,13 +669,16 @@ class VaultRepository(
             put("folder", entry.folder)
         }
 
+        val recordUid = if (entry.recordUid.isNotBlank()) entry.recordUid else java.util.UUID.randomUUID().toString()
         val plaintextBytes = payloadJson.toString().toByteArray(StandardCharsets.UTF_8)
         val entrySalt = CryptoEngine.generateSalt(16)
-        val encryptedPayload = CryptoEngine.encryptAesGcm(plaintextBytes, currentDek)
+        val aad = "FORTKNOX_AAD_V2:recordUid=${recordUid}:schema=VAULT_ENTRY:version=2:category=${entry.category.name}".toByteArray(StandardCharsets.UTF_8)
+        val encryptedPayload = CryptoEngine.encryptAesGcm(plaintextBytes, currentDek, associatedData = aad)
         CryptoEngine.wipe(plaintextBytes)
 
         val entity = EncryptedVaultEntity(
             id = entry.id,
+            recordUid = recordUid,
             title = entry.title,
             category = entry.category.name,
             isFavorite = entry.isFavorite,
@@ -669,7 +711,8 @@ class VaultRepository(
     private fun decryptEntity(entity: EncryptedVaultEntity, dek: ByteArray): VaultEntry? {
         return try {
             val payload = CryptoEngine.EncryptedPayload(iv = entity.iv, ciphertext = entity.encryptedPayload)
-            val decryptedBytes = CryptoEngine.decryptAesGcm(payload, dek)
+            val aad = "FORTKNOX_AAD_V2:recordUid=${entity.recordUid}:schema=VAULT_ENTRY:version=2:category=${entity.category}".toByteArray(StandardCharsets.UTF_8)
+            val decryptedBytes = CryptoEngine.decryptAesGcm(payload, dek, associatedData = aad)
             val jsonString = String(decryptedBytes, StandardCharsets.UTF_8)
             CryptoEngine.wipe(decryptedBytes)
 
@@ -682,6 +725,7 @@ class VaultRepository(
 
             VaultEntry(
                 id = entity.id,
+                recordUid = entity.recordUid,
                 title = entity.title,
                 username = json.optString("username", ""),
                 password = json.optString("password", ""),

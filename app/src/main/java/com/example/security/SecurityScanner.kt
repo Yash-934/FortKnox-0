@@ -61,10 +61,10 @@ class SecurityScanner(
         results.add(
             SecurityCheckResult(
                 id = "OFFLINE_AIR_GAP",
-                title = "Zero-Network Air-Gap",
+                title = "Offline Architecture & Permission Hardening",
                 description = "Verification that android.permission.INTERNET is completely absent from manifest.",
                 isPassed = !hasInternet,
-                details = if (!hasInternet) "PASS: Zero network permissions declared. Completely air-gapped from cloud." else "FAIL: Network permission detected in manifest.",
+                details = if (!hasInternet) "PASS: No declared INTERNET permission / application network access intentionally disabled." else "FAIL: Network permission detected in manifest.",
                 weight = 10,
                 category = SecurityCheckCategory.DATA_LEAKAGE
             )
@@ -72,13 +72,14 @@ class SecurityScanner(
 
         // 2. Hardware Keystore Attestation
         val attestationResult = KeystoreManager.performHardwareAttestation(context)
+        val attestationPassed = attestationResult.isAttestationSuccess || attestationResult.isHardwareBacked
         results.add(
             SecurityCheckResult(
                 id = "HARDWARE_ATTESTATION",
                 title = "Hardware Keystore Attestation",
                 description = "Android Keystore hardware root-of-trust challenge verification and certificate validation.",
-                isPassed = attestationResult.isAttestationSuccess || attestationResult.isHardwareBacked,
-                details = "PASS: ${attestationResult.details} BootState: ${attestationResult.verifiedBootState}",
+                isPassed = attestationPassed,
+                details = if (attestationPassed) "PASS: ${attestationResult.details} BootState: ${attestationResult.verifiedBootState}" else "FAIL: Attestation unverified: ${attestationResult.details}",
                 weight = 10,
                 category = SecurityCheckCategory.HARDWARE_DEFENSE
             )
@@ -114,28 +115,42 @@ class SecurityScanner(
         )
 
         // 5. No Tampering (APK Signature)
+        val sigStatus = integrityReport.signatureStatus
         val isSignatureValid = integrityReport.isSignatureValid
+        val sigDetails = when (sigStatus) {
+            NativeCore.SignatureVerificationResult.PASSED -> "PASS: Cryptographic APK signing certificate hash verified against trusted root."
+            NativeCore.SignatureVerificationResult.FAILED_MISMATCH -> "FAIL: Cryptographic signature mismatch! Repackaging or tampering detected."
+            NativeCore.SignatureVerificationResult.UNVERIFIED_NO_REFERENCE_FINGERPRINT -> "UNKNOWN: No trusted reference certificate SHA-256 configured. Signature presence confirmed."
+            NativeCore.SignatureVerificationResult.ERROR_READING_CERTIFICATE -> "FAIL: Unable to extract APK signing certificates."
+        }
         results.add(
             SecurityCheckResult(
                 id = "APK_SIGNATURE",
                 title = "APK Certificate Integrity",
                 description = "Cryptographic verification of APK certificate digest against tamper & repackaging attacks.",
                 isPassed = isSignatureValid,
-                details = if (isSignatureValid) "PASS: Cryptographic APK signature hash verified." else "FAIL: Signature mismatch. Potential repackaging detected.",
+                details = sigDetails,
                 weight = 9,
                 category = SecurityCheckCategory.SYSTEM_INTEGRITY
             )
         )
 
         // 6. Runtime DEX & Resource Integrity
+        val dexStatus = integrityReport.dexStatus
         val isDexValid = integrityReport.isDexIntegrityValid
+        val dexDetails = when (dexStatus) {
+            NativeCore.DexVerificationResult.PASSED -> "PASS: classes.dex cryptographic SHA-256 integrity hash matched."
+            NativeCore.DexVerificationResult.FAILED_HASH_MISMATCH -> "FAIL: classes.dex SHA-256 hash mismatch! Binary bytecode tampering detected."
+            NativeCore.DexVerificationResult.UNVERIFIED_NO_REFERENCE_HASH -> "UNKNOWN: classes.dex archive integrity inspected, but no static baseline hash configured."
+            NativeCore.DexVerificationResult.ERROR_READING_DEX -> "FAIL: Unable to read classes.dex from APK container."
+        }
         results.add(
             SecurityCheckResult(
                 id = "DEX_INTEGRITY",
                 title = "Runtime DEX & Asset Verification",
-                description = "Runtime checksum and entry verification of classes.dex and application resources.",
+                description = "Runtime checksum and cryptographic hash verification of classes.dex bytecode.",
                 isPassed = isDexValid,
-                details = if (isDexValid) "PASS: DEX code integrity hash confirmed." else "FAIL: DEX payload alteration detected.",
+                details = dexDetails,
                 weight = 9,
                 category = SecurityCheckCategory.SYSTEM_INTEGRITY
             )

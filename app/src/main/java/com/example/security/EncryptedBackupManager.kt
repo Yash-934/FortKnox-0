@@ -24,6 +24,8 @@ object EncryptedBackupManager {
 
     private const val BACKUP_FORMAT_VERSION = 2
     private const val KDF_ARGON2ID = "argon2id"
+    private const val MAX_BACKUP_SIZE_BYTES = 50 * 1024 * 1024L // 50 MB
+    private const val MAX_BACKUP_ENTRIES = 100_000
 
     data class ExportData(
         val jsonPayload: String
@@ -146,7 +148,20 @@ object EncryptedBackupManager {
         inputStream: java.io.InputStream,
         backupPassword: CharArray
     ): List<VaultEntry> {
-        val bytes = inputStream.use { it.readBytes() }
+        val buffer = java.io.ByteArrayOutputStream()
+        val chunk = ByteArray(8192)
+        var totalBytes = 0L
+        inputStream.use { stream ->
+            var bytesRead: Int
+            while (stream.read(chunk).also { bytesRead = it } != -1) {
+                totalBytes += bytesRead
+                if (totalBytes > MAX_BACKUP_SIZE_BYTES) {
+                    throw IllegalArgumentException("Backup stream exceeded maximum allowed size of 50MB")
+                }
+                buffer.write(chunk, 0, bytesRead)
+            }
+        }
+        val bytes = buffer.toByteArray()
         val jsonString = String(bytes, StandardCharsets.UTF_8)
         try {
             return restoreEncryptedBackup(context, jsonString, backupPassword)
@@ -165,9 +180,13 @@ object EncryptedBackupManager {
         backupJsonString: String,
         backupPassword: CharArray
     ): List<VaultEntry> {
+        if (backupJsonString.length > MAX_BACKUP_SIZE_BYTES) {
+            throw IllegalArgumentException("Backup payload string exceeds maximum allowed limit")
+        }
+
         // 1. Anti-Tamper & Root integrity pre-check
         val integrity = SecurityIntegrityChecker.performFullIntegrityAudit(context)
-        if (integrity.isRooted || !integrity.isSignatureValid) {
+        if (integrity.isRooted || integrity.signatureStatus == NativeCore.SignatureVerificationResult.FAILED_MISMATCH) {
             throw SecurityException("Backup restore aborted: Device security integrity compromised.")
         }
 
@@ -181,12 +200,35 @@ object EncryptedBackupManager {
             val saltBase64 = envelope.getString("salt")
             val nonceBase64 = envelope.getString("nonce")
             val ciphertextBase64 = envelope.getString("ciphertext")
-            val iterations = envelope.optInt("iterations", 3)
-            val memoryKb = envelope.optInt("memoryKb", 65536)
+            
+            val rawIterations = envelope.optInt("iterations", 3)
+            val rawMemoryKb = envelope.optInt("memoryKb", 65536)
+
+            // Reject attacker-controlled pathological KDF parameters to prevent CPU/Memory exhaustion DoS
+            if (rawIterations < 1 || rawIterations > 10) {
+                throw IllegalArgumentException("Pathological KDF iteration count ($rawIterations). Expected between 1 and 10.")
+            }
+            if (rawMemoryKb < 8192 || rawMemoryKb > 131072) {
+                throw IllegalArgumentException("Pathological KDF memory allocation ($rawMemoryKb KB). Expected between 8MB and 128MB.")
+            }
+
+            val iterations = rawIterations
+            val memoryKb = rawMemoryKb
 
             val salt = Base64.decode(saltBase64, Base64.DEFAULT)
+            if (salt.size < 16) {
+                throw IllegalArgumentException("Invalid backup salt length (${salt.size} bytes). Minimum 16 bytes required.")
+            }
+
             val nonce = Base64.decode(nonceBase64, Base64.DEFAULT)
+            if (nonce.size < 12) {
+                throw IllegalArgumentException("Invalid backup nonce length (${nonce.size} bytes). Minimum 12 bytes required.")
+            }
+
             var ciphertext = Base64.decode(ciphertextBase64, Base64.DEFAULT)
+            if (ciphertext.isEmpty()) {
+                throw IllegalArgumentException("Backup ciphertext cannot be empty.")
+            }
 
             if (isDeviceBound) {
                 val deviceIvBase64 = envelope.getString("deviceIv")
@@ -215,6 +257,9 @@ object EncryptedBackupManager {
             val decryptedJsonString = String(decryptedBytes, StandardCharsets.UTF_8)
             val root = JSONObject(decryptedJsonString)
             val entriesArray = root.getJSONArray("entries")
+            if (entriesArray.length() > MAX_BACKUP_ENTRIES) {
+                throw IllegalArgumentException("Backup contains more than maximum allowable entries ($MAX_BACKUP_ENTRIES)")
+            }
 
             val resultList = mutableListOf<VaultEntry>()
             for (i in 0 until entriesArray.length()) {
@@ -228,11 +273,11 @@ object EncryptedBackupManager {
 
                 val entry = VaultEntry(
                     id = 0, // Fresh ID on restore
-                    title = item.getString("title"),
-                    username = item.optString("username", ""),
-                    password = item.optString("password", ""),
-                    url = item.optString("url", ""),
-                    notes = item.optString("notes", ""),
+                    title = item.getString("title").take(500),
+                    username = item.optString("username", "").take(500),
+                    password = item.optString("password", "").take(5000),
+                    url = item.optString("url", "").take(2000),
+                    notes = item.optString("notes", "").take(50000),
                     category = category,
                     isFavorite = item.optBoolean("isFavorite", false),
                     createdAt = item.optLong("createdAt", System.currentTimeMillis()),

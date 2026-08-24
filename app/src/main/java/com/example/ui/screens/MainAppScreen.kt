@@ -74,6 +74,8 @@ import com.example.ui.theme.CyberTextSecondary
 import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
 
+import com.example.ui.theme.LocalCyberColors
+
 enum class AppTab(val label: String, val icon: ImageVector) {
     VAULT("Vault", Icons.Default.Lock),
     GENERATOR("Generator", Icons.Default.AutoAwesome),
@@ -94,6 +96,9 @@ fun MainAppScreen(
     val entries by repository.entriesFlow.collectAsState(initial = emptyList())
     val intrusionLogs by repository.intrusionLogsFlow.collectAsState(initial = emptyList())
     val decoyNotes by repository.decoyNotesFlow.collectAsState(initial = emptyList())
+    val themeConfig by repository.themePreferences.themeConfigFlow.collectAsState(
+        initial = com.example.data.preferences.ThemeConfig()
+    )
     val config by repository.preferences.configFlow.collectAsState(
         initial = VaultPreferences.VaultConfig(
             isInitialized = false,
@@ -528,7 +533,7 @@ fun MainAppScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
             NavigationBar(
-                containerColor = CyberSurface,
+                containerColor = LocalCyberColors.current.surface,
                 modifier = Modifier
                     .clip(androidx.compose.foundation.shape.CutCornerShape(topStart = 16.dp, topEnd = 16.dp))
             ) {
@@ -552,17 +557,17 @@ fun MainAppScreen(
                             )
                         },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = CyberCyan,
-                            selectedTextColor = CyberCyan,
-                            unselectedIconColor = CyberTextMuted,
-                            unselectedTextColor = CyberTextMuted,
-                            indicatorColor = CyberCyan.copy(alpha = 0.15f)
+                            selectedIconColor = LocalCyberColors.current.primary,
+                            selectedTextColor = LocalCyberColors.current.primary,
+                            unselectedIconColor = LocalCyberColors.current.textMuted,
+                            unselectedTextColor = LocalCyberColors.current.textMuted,
+                            indicatorColor = LocalCyberColors.current.primary.copy(alpha = 0.15f)
                         )
                     )
                 }
             }
         },
-        containerColor = CyberBackground
+        containerColor = LocalCyberColors.current.background
     ) { paddingValues ->
         Box(
             modifier = Modifier
@@ -619,6 +624,13 @@ fun MainAppScreen(
                     AppTab.SETTINGS -> {
                         SettingsScreen(
                             config = config,
+                            themeConfig = themeConfig,
+                            onToggleCyberpunkMode = { enable ->
+                                scope.launch { repository.themePreferences.setCyberpunkModeEnabled(enable) }
+                            },
+                            onSelectCyberpunkTemplate = { template ->
+                                scope.launch { repository.themePreferences.setSelectedCyberpunkTemplate(template) }
+                            },
                             onSetAutoLockTimeout = { sec ->
                                 scope.launch { repository.preferences.setAutoLockTimeout(sec) }
                             },
