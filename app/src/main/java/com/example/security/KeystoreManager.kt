@@ -66,6 +66,50 @@ object KeystoreManager {
     }
 
     /**
+     * Safely generates an AES-256 GCM key in Android Keystore with automatic StrongBox-to-TEE fallback.
+     */
+    private fun generateAesKeySafely(alias: String, context: Context) {
+        val keyGenerator = KeyGenerator.getInstance(
+            KeyProperties.KEY_ALGORITHM_AES,
+            ANDROID_KEYSTORE
+        )
+
+        var generated = false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && isHardwareStrongBoxSupported(context)) {
+            try {
+                val strongBoxSpec = KeyGenParameterSpec.Builder(
+                    alias,
+                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+                )
+                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                    .setKeySize(256)
+                    .setIsStrongBoxBacked(true)
+                    .build()
+                keyGenerator.init(strongBoxSpec)
+                keyGenerator.generateKey()
+                generated = true
+            } catch (t: Throwable) {
+                // StrongBox unavailable or failed on this physical device, fallback to standard TEE
+                generated = false
+            }
+        }
+
+        if (!generated) {
+            val standardSpec = KeyGenParameterSpec.Builder(
+                alias,
+                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+            )
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setKeySize(256)
+                .build()
+            keyGenerator.init(standardSpec)
+            keyGenerator.generateKey()
+        }
+    }
+
+    /**
      * Retrieves or generates the Master Keystore key for database passphrase wrapping.
      */
     private fun getOrCreateDbMasterKey(context: Context): SecretKey {
@@ -73,27 +117,7 @@ object KeystoreManager {
         keyStore.load(null)
 
         if (!keyStore.containsAlias(DB_WRAPPER_KEY_ALIAS)) {
-            val keyGenerator = KeyGenerator.getInstance(
-                KeyProperties.KEY_ALGORITHM_AES,
-                ANDROID_KEYSTORE
-            )
-            val builder = KeyGenParameterSpec.Builder(
-                DB_WRAPPER_KEY_ALIAS,
-                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-            )
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setKeySize(256)
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && isHardwareStrongBoxSupported(context)) {
-                try {
-                    builder.setIsStrongBoxBacked(true)
-                } catch (e: Exception) {
-                    builder.setIsStrongBoxBacked(false)
-                }
-            }
-            keyGenerator.init(builder.build())
-            keyGenerator.generateKey()
+            generateAesKeySafely(DB_WRAPPER_KEY_ALIAS, context)
         }
 
         return keyStore.getKey(DB_WRAPPER_KEY_ALIAS, null) as SecretKey
@@ -146,27 +170,7 @@ object KeystoreManager {
         keyStore.load(null)
 
         if (!keyStore.containsAlias(LOG_WRAPPER_KEY_ALIAS)) {
-            val keyGenerator = KeyGenerator.getInstance(
-                KeyProperties.KEY_ALGORITHM_AES,
-                ANDROID_KEYSTORE
-            )
-            val builder = KeyGenParameterSpec.Builder(
-                LOG_WRAPPER_KEY_ALIAS,
-                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-            )
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setKeySize(256)
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && isHardwareStrongBoxSupported(context)) {
-                try {
-                    builder.setIsStrongBoxBacked(true)
-                } catch (e: Exception) {
-                    builder.setIsStrongBoxBacked(false)
-                }
-            }
-            keyGenerator.init(builder.build())
-            keyGenerator.generateKey()
+            generateAesKeySafely(LOG_WRAPPER_KEY_ALIAS, context)
         }
 
         return keyStore.getKey(LOG_WRAPPER_KEY_ALIAS, null) as SecretKey
@@ -245,23 +249,36 @@ object KeystoreManager {
                     ANDROID_KEYSTORE
                 )
 
-                val specBuilder = KeyGenParameterSpec.Builder(
-                    ATTESTATION_KEY_ALIAS,
-                    KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY
-                )
-                    .setDigests(KeyProperties.DIGEST_SHA256)
-                    .setAttestationChallenge(challenge)
-
+                var keyGenerated = false
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && isHardwareStrongBoxSupported(context)) {
                     try {
-                        specBuilder.setIsStrongBoxBacked(true)
-                    } catch (e: Exception) {
-                        // ignore
+                        val sbSpec = KeyGenParameterSpec.Builder(
+                            ATTESTATION_KEY_ALIAS,
+                            KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY
+                        )
+                            .setDigests(KeyProperties.DIGEST_SHA256)
+                            .setAttestationChallenge(challenge)
+                            .setIsStrongBoxBacked(true)
+                            .build()
+                        keyPairGenerator.initialize(sbSpec)
+                        keyPairGenerator.generateKeyPair()
+                        keyGenerated = true
+                    } catch (t: Throwable) {
+                        keyGenerated = false
                     }
                 }
 
-                keyPairGenerator.initialize(specBuilder.build())
-                keyPairGenerator.generateKeyPair()
+                if (!keyGenerated) {
+                    val standardSpec = KeyGenParameterSpec.Builder(
+                        ATTESTATION_KEY_ALIAS,
+                        KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY
+                    )
+                        .setDigests(KeyProperties.DIGEST_SHA256)
+                        .setAttestationChallenge(challenge)
+                        .build()
+                    keyPairGenerator.initialize(standardSpec)
+                    keyPairGenerator.generateKeyPair()
+                }
 
                 val certs = keyStore.getCertificateChain(ATTESTATION_KEY_ALIAS)
                 if (certs != null && certs.isNotEmpty()) {
@@ -412,27 +429,7 @@ object KeystoreManager {
         keyStore.load(null)
 
         if (!keyStore.containsAlias(DEVICE_BACKUP_KEY_ALIAS)) {
-            val keyGenerator = KeyGenerator.getInstance(
-                KeyProperties.KEY_ALGORITHM_AES,
-                ANDROID_KEYSTORE
-            )
-            val builder = KeyGenParameterSpec.Builder(
-                DEVICE_BACKUP_KEY_ALIAS,
-                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-            )
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setKeySize(256)
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && isHardwareStrongBoxSupported(context)) {
-                try {
-                    builder.setIsStrongBoxBacked(true)
-                } catch (e: Exception) {
-                    builder.setIsStrongBoxBacked(false)
-                }
-            }
-            keyGenerator.init(builder.build())
-            keyGenerator.generateKey()
+            generateAesKeySafely(DEVICE_BACKUP_KEY_ALIAS, context)
         }
 
         return keyStore.getKey(DEVICE_BACKUP_KEY_ALIAS, null) as SecretKey
@@ -465,10 +462,10 @@ object KeystoreManager {
     }
 
     /**
-     * Generates a biometric hardware-backed AES key in Android Keystore.
+     * Generates a biometric hardware-backed AES key in Android Keystore with fallback.
      */
     fun generateBiometricKey(context: Context): Boolean {
-        try {
+        return try {
             val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE)
             keyStore.load(null)
 
@@ -481,46 +478,61 @@ object KeystoreManager {
                 ANDROID_KEYSTORE
             )
 
-            val builder = KeyGenParameterSpec.Builder(
-                BIOMETRIC_KEY_ALIAS,
-                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-            )
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setKeySize(256)
-                .setUserAuthenticationRequired(true)
+            var generated = false
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && isHardwareStrongBoxSupported(context)) {
+                try {
+                    val sbBuilder = KeyGenParameterSpec.Builder(
+                        BIOMETRIC_KEY_ALIAS,
+                        KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+                    )
+                        .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                        .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                        .setKeySize(256)
+                        .setUserAuthenticationRequired(true)
+                        .setIsStrongBoxBacked(true)
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                builder.setUserAuthenticationParameters(
-                    0,
-                    KeyProperties.AUTH_BIOMETRIC_STRONG
-                )
-            }
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                builder.setInvalidatedByBiometricEnrollment(true)
-            }
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                val hasStrongBox = context.packageManager.hasSystemFeature(PackageManager.FEATURE_STRONGBOX_KEYSTORE)
-                if (hasStrongBox) {
-                    try {
-                        builder.setIsStrongBoxBacked(true)
-                        keyGenerator.init(builder.build())
-                        keyGenerator.generateKey()
-                        return true
-                    } catch (e: Exception) {
-                        builder.setIsStrongBoxBacked(false)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        sbBuilder.setUserAuthenticationParameters(
+                            0,
+                            KeyProperties.AUTH_BIOMETRIC_STRONG
+                        )
                     }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                        sbBuilder.setInvalidatedByBiometricEnrollment(true)
+                    }
+                    keyGenerator.init(sbBuilder.build())
+                    keyGenerator.generateKey()
+                    generated = true
+                } catch (t: Throwable) {
+                    generated = false
                 }
             }
 
-            keyGenerator.init(builder.build())
-            keyGenerator.generateKey()
-            return true
-        } catch (e: Exception) {
-            e.printStackTrace()
-            return false
+            if (!generated) {
+                val standardBuilder = KeyGenParameterSpec.Builder(
+                    BIOMETRIC_KEY_ALIAS,
+                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+                )
+                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                    .setKeySize(256)
+                    .setUserAuthenticationRequired(true)
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    standardBuilder.setUserAuthenticationParameters(
+                        0,
+                        KeyProperties.AUTH_BIOMETRIC_STRONG
+                    )
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    standardBuilder.setInvalidatedByBiometricEnrollment(true)
+                }
+                keyGenerator.init(standardBuilder.build())
+                keyGenerator.generateKey()
+            }
+            true
+        } catch (t: Throwable) {
+            false
         }
     }
 

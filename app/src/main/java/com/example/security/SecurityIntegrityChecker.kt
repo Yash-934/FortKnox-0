@@ -351,31 +351,33 @@ object SecurityIntegrityChecker {
         try {
             ClassLoader.getSystemClassLoader().loadClass("de.robv.android.xposed.XposedBridge")
             return true
-        } catch (e: ClassNotFoundException) {
-            // Good
-        } catch (e: Exception) {
-            // Ignore
+        } catch (t: Throwable) {
+            // Good - class not found or not accessible
         }
 
         return false
     }
 
     /**
-     * Probes default Frida server TCP ports (27042, 27043) on localhost.
+     * Probes default Frida server TCP ports (27042, 27043) on localhost safely.
      */
     fun probeFridaPorts(): Boolean {
-        val ports = intArrayOf(27042, 27043)
-        for (port in ports) {
-            try {
-                val socket = Socket()
-                socket.connect(InetSocketAddress("127.0.0.1", port), 50)
-                socket.close()
-                return true
-            } catch (e: Exception) {
-                // Safe
+        return try {
+            val ports = intArrayOf(27042, 27043)
+            for (port in ports) {
+                try {
+                    val socket = Socket()
+                    socket.connect(InetSocketAddress("127.0.0.1", port), 50)
+                    socket.close()
+                    return true
+                } catch (t: Throwable) {
+                    // Safe
+                }
             }
+            false
+        } catch (t: Throwable) {
+            false
         }
-        return false
     }
 
     /**
@@ -395,7 +397,7 @@ object SecurityIntegrityChecker {
                 }
             }
             false
-        } catch (e: Exception) {
+        } catch (t: Throwable) {
             false
         }
     }
@@ -404,14 +406,22 @@ object SecurityIntegrityChecker {
      * Verifies APK signing certificate fingerprint against expected release fingerprint.
      */
     fun verifySignature(context: Context, expectedSha256: String? = null): NativeCore.SignatureVerificationResult {
-        return NativeCore.verifyApkSignature(context, expectedSha256)
+        return try {
+            NativeCore.verifyApkSignature(context, expectedSha256)
+        } catch (t: Throwable) {
+            NativeCore.SignatureVerificationResult.ERROR_READING_CERTIFICATE
+        }
     }
 
     /**
      * Inspects classes.dex within the APK archive for cryptographic integrity.
      */
     fun verifyDexIntegrity(context: Context, expectedSha256: String? = null): NativeCore.DexVerificationResult {
-        return NativeCore.verifyDexIntegrity(context, expectedSha256)
+        return try {
+            NativeCore.verifyDexIntegrity(context, expectedSha256)
+        } catch (t: Throwable) {
+            NativeCore.DexVerificationResult.ERROR_READING_DEX
+        }
     }
 
     /**
@@ -422,44 +432,61 @@ object SecurityIntegrityChecker {
         expectedCertSha256: String? = null,
         expectedDexSha256: String? = null
     ): IntegrityReport {
-        val (isRooted, rootReasons) = checkRoot(context)
-        val isHooked = checkHookingAndTracing() || probeFridaPorts()
-        val isDebuggerAttached = Debug.isDebuggerConnected()
-        val signatureResult = verifySignature(context, expectedCertSha256)
-        val isSignatureValid = signatureResult == NativeCore.SignatureVerificationResult.PASSED
-        val dexResult = verifyDexIntegrity(context, expectedDexSha256)
-        val isDexValid = dexResult == NativeCore.DexVerificationResult.PASSED
-        val isScreenRecording = checkScreenRecording(context)
+        return try {
+            val (isRooted, rootReasons) = checkRoot(context)
+            val isHooked = checkHookingAndTracing() || probeFridaPorts()
+            val isDebuggerAttached = try { Debug.isDebuggerConnected() } catch (t: Throwable) { false }
+            val signatureResult = verifySignature(context, expectedCertSha256)
+            val isSignatureValid = signatureResult == NativeCore.SignatureVerificationResult.PASSED
+            val dexResult = verifyDexIntegrity(context, expectedDexSha256)
+            val isDexValid = dexResult == NativeCore.DexVerificationResult.PASSED
+            val isScreenRecording = checkScreenRecording(context)
 
-        val attestationResult = KeystoreManager.performHardwareAttestation(context)
+            val attestationResult = KeystoreManager.performHardwareAttestation(context)
 
-        var riskScore = 0.0f
-        if (isRooted) riskScore += 0.40f
-        if (isHooked) riskScore += 0.35f
-        if (isDebuggerAttached) riskScore += 0.20f
-        if (signatureResult == NativeCore.SignatureVerificationResult.FAILED_MISMATCH) riskScore += 0.30f
-        if (dexResult == NativeCore.DexVerificationResult.FAILED_HASH_MISMATCH) riskScore += 0.30f
-        if (!attestationResult.isHardwareBacked) riskScore += 0.15f
-        if (isScreenRecording) riskScore += 0.15f
-        if (riskScore > 1.0f) riskScore = 1.0f
+            var riskScore = 0.0f
+            if (isRooted) riskScore += 0.40f
+            if (isHooked) riskScore += 0.35f
+            if (isDebuggerAttached) riskScore += 0.20f
+            if (signatureResult == NativeCore.SignatureVerificationResult.FAILED_MISMATCH) riskScore += 0.30f
+            if (dexResult == NativeCore.DexVerificationResult.FAILED_HASH_MISMATCH) riskScore += 0.30f
+            if (!attestationResult.isHardwareBacked) riskScore += 0.15f
+            if (isScreenRecording) riskScore += 0.15f
+            if (riskScore > 1.0f) riskScore = 1.0f
 
-        val overallSecure = !isRooted && !isHooked && !isDebuggerAttached &&
-                signatureResult != NativeCore.SignatureVerificationResult.FAILED_MISMATCH &&
-                dexResult != NativeCore.DexVerificationResult.FAILED_HASH_MISMATCH
+            val overallSecure = !isRooted && !isHooked && !isDebuggerAttached &&
+                    signatureResult != NativeCore.SignatureVerificationResult.FAILED_MISMATCH &&
+                    dexResult != NativeCore.DexVerificationResult.FAILED_HASH_MISMATCH
 
-        return IntegrityReport(
-            isRooted = isRooted,
-            isDebuggerAttached = isDebuggerAttached,
-            isHookDetected = isHooked,
-            isSignatureValid = isSignatureValid,
-            isDexIntegrityValid = isDexValid,
-            isScreenRecordingDetected = isScreenRecording,
-            hardwareAttestationPassed = attestationResult.isAttestationSuccess,
-            rootReasons = rootReasons,
-            securityRiskScore = riskScore,
-            overallSecure = overallSecure,
-            signatureStatus = signatureResult,
-            dexStatus = dexResult
-        )
+            IntegrityReport(
+                isRooted = isRooted,
+                isDebuggerAttached = isDebuggerAttached,
+                isHookDetected = isHooked,
+                isSignatureValid = isSignatureValid,
+                isDexIntegrityValid = isDexValid,
+                isScreenRecordingDetected = isScreenRecording,
+                hardwareAttestationPassed = attestationResult.isAttestationSuccess,
+                rootReasons = rootReasons,
+                securityRiskScore = riskScore,
+                overallSecure = overallSecure,
+                signatureStatus = signatureResult,
+                dexStatus = dexResult
+            )
+        } catch (t: Throwable) {
+            IntegrityReport(
+                isRooted = false,
+                isDebuggerAttached = false,
+                isHookDetected = false,
+                isSignatureValid = false,
+                isDexIntegrityValid = false,
+                isScreenRecordingDetected = false,
+                hardwareAttestationPassed = false,
+                rootReasons = emptyList(),
+                securityRiskScore = 0.0f,
+                overallSecure = true,
+                signatureStatus = NativeCore.SignatureVerificationResult.ERROR_READING_CERTIFICATE,
+                dexStatus = NativeCore.DexVerificationResult.ERROR_READING_DEX
+            )
+        }
     }
 }

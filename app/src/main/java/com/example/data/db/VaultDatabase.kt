@@ -32,24 +32,22 @@ abstract class VaultDatabase : RoomDatabase() {
 
         fun getDatabase(context: Context): VaultDatabase {
             return INSTANCE ?: synchronized(this) {
-                val passphrase = KeystoreManager.getOrCreateDatabasePassphrase(context.applicationContext)
-                val factory = SupportFactory(passphrase)
+                INSTANCE ?: run {
+                    val passphrase = KeystoreManager.getOrCreateDatabasePassphrase(context.applicationContext)
+                    val factory = SupportFactory(passphrase)
 
-                val instance = Room.databaseBuilder(
-                    context.applicationContext,
-                    VaultDatabase::class.java,
-                    "fortknox_encrypted_vault.db"
-                )
-                    .openHelperFactory(factory)
-                    .fallbackToDestructiveMigration()
-                    .build()
+                    val instance = Room.databaseBuilder(
+                        context.applicationContext,
+                        VaultDatabase::class.java,
+                        "fortknox_encrypted_vault.db"
+                    )
+                        .openHelperFactory(factory)
+                        .fallbackToDestructiveMigration()
+                        .build()
 
-                // Zeroize passphrase in memory after initialization
-                NativeCore.wipe(passphrase)
-                NativeCore.munlock(passphrase)
-
-                INSTANCE = instance
-                instance
+                    INSTANCE = instance
+                    instance
+                }
             }
         }
     }
