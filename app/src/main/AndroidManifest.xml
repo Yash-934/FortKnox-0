@@ -14,6 +14,7 @@
         android:required="false" />
 
     <application
+        android:name=".VaultApplication"
         android:allowBackup="false"
         android:fullBackupContent="false"
         android:hasFragileUserData="false"
@@ -36,6 +37,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Crash Report Activity -->
+        <activity
+            android:name=".CrashReportActivity"
+            android:exported="false"
+            android:theme="@style/Theme.MyApplication"
+            android:launchMode="singleInstance"
+            android:taskAffinity="com.example.crash"
+            android:windowSoftInputMode="stateAlwaysHidden" />
 
         <!-- Disguise Mode Decoy Launcher Alias (Notes) -->
         <activity-alias

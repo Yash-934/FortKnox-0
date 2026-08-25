@@ -118,6 +118,8 @@ fun SettingsScreen(
     var showRestorePasswordDialog by remember { mutableStateOf(false) }
     var showAutofillLogsDialog by remember { mutableStateOf(false) }
     var autofillLogContent by remember { mutableStateOf("") }
+    var showCrashReportDialog by remember { mutableStateOf(false) }
+    var lastCrashReportContent by remember { mutableStateOf("") }
     
     val context = androidx.compose.ui.platform.LocalContext.current
 
@@ -1192,7 +1194,7 @@ fun SettingsScreen(
         CyberCard(modifier = Modifier.fillMaxWidth()) {
             Column {
                 Text(
-                    text = "SYSTEM INFORMATION",
+                    text = "SYSTEM INFORMATION & CRASH DIAGNOSTICS",
                     color = CyberTextSecondary,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
@@ -1206,6 +1208,42 @@ fun SettingsScreen(
                     onClick = onNavigateToAbout,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    CyberOutlinedButton(
+                        text = "CRASH LOG",
+                        icon = Icons.Default.Warning,
+                        color = CyberLaserRed,
+                        fontSize = 11.sp,
+                        onClick = {
+                            val log = com.example.security.CrashHandler.getLastCrashReport(context)
+                            lastCrashReportContent = log ?: "No crash events recorded yet. If the app ever crashes, the diagnostic report is automatically copied to your clipboard and saved here."
+                            showCrashReportDialog = true
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(38.dp)
+                    )
+
+                    CyberOutlinedButton(
+                        text = "TEST CRASH",
+                        color = CyberGold,
+                        fontSize = 11.sp,
+                        onClick = {
+                            android.widget.Toast.makeText(context, "Triggering test exception...", android.widget.Toast.LENGTH_SHORT).show()
+                            // Trigger unhandled exception to test automatic copy and crash reporting
+                            throw RuntimeException("Fort Knox Test Crash: Verifying automatic crash report copying and crash handler recovery.")
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(38.dp)
+                    )
+                }
             }
         }
 
@@ -1529,6 +1567,86 @@ fun SettingsScreen(
                         Text("CLEAR LOGS", color = CyberLaserRed, fontSize = 12.sp)
                     }
                     TextButton(onClick = { showAutofillLogsDialog = false }) {
+                        Text("CLOSE", color = CyberCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            containerColor = CyberSurface
+        )
+    }
+
+    // Crash Diagnostic Report Dialog
+    if (showCrashReportDialog) {
+        AlertDialog(
+            onDismissRequest = { showCrashReportDialog = false },
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "CRASH DIAGNOSTIC LOG",
+                        color = CyberLaserRed,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(340.dp)
+                ) {
+                    Text(
+                        text = "Comprehensive diagnostic log of the last recorded system exception, hardware environment, and stack trace:",
+                        color = CyberTextMuted,
+                        fontSize = 11.sp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .clip(CutCornerShape(6.dp))
+                            .background(CyberBackground)
+                            .padding(10.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Text(
+                            text = lastCrashReportContent,
+                            color = Color(0xFF80CBC4),
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace,
+                            lineHeight = 14.sp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(
+                        onClick = {
+                            val success = com.example.security.CrashHandler.copyToClipboard(context, lastCrashReportContent)
+                            if (success) {
+                                android.widget.Toast.makeText(context, "Crash log copied to clipboard!", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    ) {
+                        Text("COPY LOG", color = CyberLaserRed, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                    TextButton(
+                        onClick = {
+                            com.example.security.CrashHandler.clearLastCrashReport(context)
+                            lastCrashReportContent = "Crash log cleared."
+                            android.widget.Toast.makeText(context, "Cleared saved crash log.", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    ) {
+                        Text("CLEAR", color = CyberTextMuted, fontSize = 12.sp)
+                    }
+                    TextButton(onClick = { showCrashReportDialog = false }) {
                         Text("CLOSE", color = CyberCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
