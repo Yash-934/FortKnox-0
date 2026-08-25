@@ -25,6 +25,11 @@
     native <methods>;
 }
 
+# Preserve SQLCipher classes, JNI methods, and native fields (e.g. mNativeHandle, mNativePath, CursorWindow ptrs)
+-keep class net.sqlcipher.** { *; }
+-keep class net.sqlcipher.database.** { *; }
+-dontwarn net.sqlcipher.**
+
 # Preserve Room entities and TypeConverters
 -keep class * extends androidx.room.RoomDatabase
 -keep @androidx.room.Entity class * { *; }
