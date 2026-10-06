@@ -22,7 +22,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Security
@@ -358,7 +357,6 @@ fun SecurityAuditScreen(
                     title = "APK Signature Digest",
                     isPass = isSigValid,
                     detail = sigDetail,
-                    showChevron = true,
                     onClick = { showSignatureDetailsDialog = true }
                 )
 
@@ -625,7 +623,6 @@ private fun IntegrityRow(
     title: String,
     isPass: Boolean,
     detail: String,
-    showChevron: Boolean = false,
     onClick: (() -> Unit)? = null
 ) {
     val clickableModifier = if (onClick != null) {
@@ -638,11 +635,15 @@ private fun IntegrityRow(
         modifier = Modifier
             .fillMaxWidth()
             .then(clickableModifier)
-            .padding(vertical = 6.dp, horizontal = if (onClick != null) 4.dp else 0.dp),
+            .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 12.dp)
+        ) {
             Text(
                 text = title,
                 color = CyberTextPrimary,
@@ -655,22 +656,11 @@ private fun IntegrityRow(
                 fontSize = 11.sp
             )
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = if (isPass) Icons.Default.CheckCircle else Icons.Default.Warning,
-                contentDescription = null,
-                tint = if (isPass) CyberEmerald else CyberLaserRed,
-                modifier = Modifier.size(20.dp)
-            )
-            if (showChevron) {
-                Spacer(modifier = Modifier.width(4.dp))
-                Icon(
-                    imageVector = Icons.Default.ChevronRight,
-                    contentDescription = "Details",
-                    tint = CyberTextMuted,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-        }
+        Icon(
+            imageVector = if (isPass) Icons.Default.CheckCircle else Icons.Default.Warning,
+            contentDescription = null,
+            tint = if (isPass) CyberEmerald else CyberLaserRed,
+            modifier = Modifier.size(20.dp)
+        )
     }
 }
