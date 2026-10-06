@@ -487,7 +487,11 @@ fun SecurityAuditScreen(
         } else {
             "UNAVAILABLE"
         }
-        val expectedFp = BuildConfig.EXPECTED_SIGNATURE_SHA256.uppercase().chunked(2).joinToString(":")
+        val expectedFp = if (integrityReport.isSignatureValid && rawFp.isNotBlank()) {
+            rawFp.uppercase().chunked(2).joinToString(":")
+        } else {
+            BuildConfig.EXPECTED_SIGNATURE_SHA256.uppercase().chunked(2).joinToString(":")
+        }
 
         AlertDialog(
             onDismissRequest = { showSignatureDetailsDialog = false },

@@ -29,7 +29,7 @@ android {
     ndk {
       abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
     }
-    buildConfigField("String", "EXPECTED_SIGNATURE_SHA256", "\"f550f9c08690eb7a5388f03a7b91689ed5d43d49b23e9f7101e5bce378faee4f\"")
+    buildConfigField("String", "EXPECTED_SIGNATURE_SHA256", "\"8b3682ddb25545d4c3fc58b3acd9d3607c3253a8e7ff881c4839f73a9b330a5a\"")
   }
 
   externalNativeBuild {
@@ -62,8 +62,12 @@ android {
       isMinifyEnabled = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("release")
+      buildConfigField("String", "EXPECTED_SIGNATURE_SHA256", "\"8b3682ddb25545d4c3fc58b3acd9d3607c3253a8e7ff881c4839f73a9b330a5a\"")
     }
-    debug { signingConfig = signingConfigs.getByName("debugConfig") }
+    debug {
+      signingConfig = signingConfigs.getByName("debugConfig")
+      buildConfigField("String", "EXPECTED_SIGNATURE_SHA256", "\"f550f9c08690eb7a5388f03a7b91689ed5d43d49b23e9f7101e5bce378faee4f\"")
+    }
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11

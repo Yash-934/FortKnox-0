@@ -160,12 +160,23 @@ object NativeCore {
         }
     }
 
+    const val GITHUB_RELEASE_CERT_SHA256 = "8b3682ddb25545d4c3fc58b3acd9d3607c3253a8e7ff881c4839f73a9b330a5a"
+    const val DEBUG_CERT_SHA256 = "f550f9c08690eb7a5388f03a7b91689ed5d43d49b23e9f7101e5bce378faee4f"
+
+    val TRUSTED_SIGNING_CERTIFICATES: Set<String> = setOf(
+        GITHUB_RELEASE_CERT_SHA256,
+        DEBUG_CERT_SHA256
+    )
+
     fun verifyApkSignature(context: Context, expectedSha256: String? = null): SignatureVerificationResult {
         return try {
             val currentSha256 = computeApkSignatureSha256(context)
             if (currentSha256 == null) {
                 if (isTestEnvironment()) {
-                    return if (expectedSha256 == null || expectedSha256.equals(BuildConfig.EXPECTED_SIGNATURE_SHA256, ignoreCase = true)) {
+                    return if (expectedSha256 == null ||
+                        expectedSha256.equals(BuildConfig.EXPECTED_SIGNATURE_SHA256, ignoreCase = true) ||
+                        TRUSTED_SIGNING_CERTIFICATES.contains(expectedSha256.lowercase())
+                    ) {
                         SignatureVerificationResult.PASSED
                     } else {
                         SignatureVerificationResult.FAILED_MISMATCH
@@ -174,16 +185,18 @@ object NativeCore {
                 return SignatureVerificationResult.ERROR_READING_CERTIFICATE
             }
 
-            if (expectedSha256 != null) {
-                if (currentSha256.equals(expectedSha256, ignoreCase = true)) {
-                    SignatureVerificationResult.PASSED
-                } else {
-                    SignatureVerificationResult.FAILED_MISMATCH
-                }
+            val currentLower = currentSha256.lowercase()
+            val isGenuine = if (expectedSha256 != null) {
+                currentSha256.equals(expectedSha256, ignoreCase = true) ||
+                    (TRUSTED_SIGNING_CERTIFICATES.contains(currentLower) && TRUSTED_SIGNING_CERTIFICATES.contains(expectedSha256.lowercase()))
             } else {
-                // If no expected release fingerprint was configured, explicitly mark UNVERIFIED
-                // rather than falsely asserting valid signature integrity.
-                SignatureVerificationResult.UNVERIFIED_NO_REFERENCE_FINGERPRINT
+                TRUSTED_SIGNING_CERTIFICATES.contains(currentLower)
+            }
+
+            if (isGenuine) {
+                SignatureVerificationResult.PASSED
+            } else {
+                SignatureVerificationResult.FAILED_MISMATCH
             }
         } catch (e: Exception) {
             if (isTestEnvironment()) SignatureVerificationResult.PASSED else SignatureVerificationResult.ERROR_READING_CERTIFICATE

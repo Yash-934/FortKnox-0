@@ -318,6 +318,12 @@ class SecurityAuditRegressionTest {
     }
 
     @Test
+    fun testTrustedSigningCertificatesContainsGitHubAndDebug() {
+        assertTrue(NativeCore.TRUSTED_SIGNING_CERTIFICATES.contains(NativeCore.GITHUB_RELEASE_CERT_SHA256))
+        assertTrue(NativeCore.TRUSTED_SIGNING_CERTIFICATES.contains(NativeCore.DEBUG_CERT_SHA256))
+    }
+
+    @Test
     fun testPerformFullIntegrityAuditWithDefaultSignatureReference() {
         val report = SecurityIntegrityChecker.performFullIntegrityAudit(context)
         assertNotNull(report)
