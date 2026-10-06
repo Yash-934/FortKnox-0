@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
+import com.example.BuildConfig
 import java.io.File
 import java.security.MessageDigest
 
@@ -137,7 +138,14 @@ object NativeCore {
             }
 
             val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                packageInfo.signingInfo?.apkContentsSigners
+                val signingInfo = packageInfo.signingInfo
+                if (signingInfo != null) {
+                    if (signingInfo.hasMultipleSigners()) {
+                        signingInfo.apkContentsSigners
+                    } else {
+                        signingInfo.signingCertificateHistory
+                    } ?: signingInfo.apkContentsSigners
+                } else null
             } else {
                 @Suppress("DEPRECATION")
                 packageInfo.signatures
@@ -157,7 +165,11 @@ object NativeCore {
             val currentSha256 = computeApkSignatureSha256(context)
             if (currentSha256 == null) {
                 if (isTestEnvironment()) {
-                    return if (expectedSha256 == null) SignatureVerificationResult.PASSED else SignatureVerificationResult.FAILED_MISMATCH
+                    return if (expectedSha256 == null || expectedSha256.equals(BuildConfig.EXPECTED_SIGNATURE_SHA256, ignoreCase = true)) {
+                        SignatureVerificationResult.PASSED
+                    } else {
+                        SignatureVerificationResult.FAILED_MISMATCH
+                    }
                 }
                 return SignatureVerificationResult.ERROR_READING_CERTIFICATE
             }

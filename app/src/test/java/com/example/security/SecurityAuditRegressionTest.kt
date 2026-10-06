@@ -310,6 +310,21 @@ class SecurityAuditRegressionTest {
     }
 
     @Test
+    fun testBuildConfigExpectedSignatureSha256Configured() {
+        val expectedSha = com.example.BuildConfig.EXPECTED_SIGNATURE_SHA256
+        assertNotNull(expectedSha)
+        assertEquals(64, expectedSha.length)
+        assertTrue(expectedSha.matches(Regex("^[0-9a-fA-F]{64}$")))
+    }
+
+    @Test
+    fun testPerformFullIntegrityAuditWithDefaultSignatureReference() {
+        val report = SecurityIntegrityChecker.performFullIntegrityAudit(context)
+        assertNotNull(report)
+        assertNotNull(report.signatureStatus)
+    }
+
+    @Test
     fun testDexIntegrityCheckExecution() {
         val result = NativeCore.verifyDexIntegrity(context)
         assertNotNull(result)

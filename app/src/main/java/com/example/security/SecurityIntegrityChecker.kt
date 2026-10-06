@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.hardware.display.DisplayManager
 import android.os.Build
 import android.os.Debug
+import com.example.BuildConfig
 import java.io.BufferedReader
 import java.io.File
 import java.io.FileReader
@@ -42,7 +43,8 @@ object SecurityIntegrityChecker {
         val securityRiskScore: Float, // 0.0 (Safe) to 1.0 (Critical Threat)
         val overallSecure: Boolean,
         val signatureStatus: NativeCore.SignatureVerificationResult = NativeCore.SignatureVerificationResult.UNVERIFIED_NO_REFERENCE_FINGERPRINT,
-        val dexStatus: NativeCore.DexVerificationResult = NativeCore.DexVerificationResult.UNVERIFIED_NO_REFERENCE_HASH
+        val dexStatus: NativeCore.DexVerificationResult = NativeCore.DexVerificationResult.UNVERIFIED_NO_REFERENCE_HASH,
+        val certificateFingerprintSha256: String? = null
     )
 
     private val SU_PATHS = arrayOf(
@@ -429,13 +431,14 @@ object SecurityIntegrityChecker {
      */
     fun performFullIntegrityAudit(
         context: Context,
-        expectedCertSha256: String? = null,
+        expectedCertSha256: String? = BuildConfig.EXPECTED_SIGNATURE_SHA256,
         expectedDexSha256: String? = null
     ): IntegrityReport {
         return try {
             val (isRooted, rootReasons) = checkRoot(context)
             val isHooked = checkHookingAndTracing() || probeFridaPorts()
             val isDebuggerAttached = try { Debug.isDebuggerConnected() } catch (t: Throwable) { false }
+            val certFingerprint = NativeCore.computeApkSignatureSha256(context)
             val signatureResult = verifySignature(context, expectedCertSha256)
             val isSignatureValid = signatureResult == NativeCore.SignatureVerificationResult.PASSED
             val dexResult = verifyDexIntegrity(context, expectedDexSha256)
@@ -470,7 +473,8 @@ object SecurityIntegrityChecker {
                 securityRiskScore = riskScore,
                 overallSecure = overallSecure,
                 signatureStatus = signatureResult,
-                dexStatus = dexResult
+                dexStatus = dexResult,
+                certificateFingerprintSha256 = certFingerprint
             )
         } catch (t: Throwable) {
             IntegrityReport(
@@ -485,7 +489,8 @@ object SecurityIntegrityChecker {
                 securityRiskScore = 0.0f,
                 overallSecure = true,
                 signatureStatus = NativeCore.SignatureVerificationResult.ERROR_READING_CERTIFICATE,
-                dexStatus = NativeCore.DexVerificationResult.ERROR_READING_DEX
+                dexStatus = NativeCore.DexVerificationResult.ERROR_READING_DEX,
+                certificateFingerprintSha256 = null
             )
         }
     }

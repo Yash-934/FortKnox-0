@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,25 +22,35 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.BuildConfig
 import com.example.data.model.VaultEntry
+import com.example.security.NativeCore
 import com.example.security.PasswordGenerator
 import com.example.security.SecurityIntegrityChecker
 import com.example.ui.components.CyberBadge
@@ -84,6 +95,10 @@ fun SecurityAuditScreen(
             (100 - (deduction.toDouble() / entries.size * 50)).toInt().coerceIn(10, 100)
         }
     }
+
+    var showSignatureDetailsDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
 
     Column(
         modifier = Modifier
@@ -319,10 +334,32 @@ fun SecurityAuditScreen(
                     detail = if (integrityReport.isHookDetected) "Injected hooks detected" else "/proc/self/maps verified clean"
                 )
 
+                val sigStatus = integrityReport.signatureStatus
+                val isSigValid = integrityReport.isSignatureValid
+                val fp = integrityReport.certificateFingerprintSha256
+                val sigDetail = when {
+                    isSigValid -> {
+                        val preview = if (!fp.isNullOrBlank() && fp.length >= 16) {
+                            "${fp.take(8).uppercase()}...${fp.takeLast(8).uppercase()}"
+                        } else "Verified"
+                        "SHA-256: $preview (Genuine - Tap for Details)"
+                    }
+                    sigStatus == NativeCore.SignatureVerificationResult.FAILED_MISMATCH -> {
+                        "FAIL: Signature mismatch! Tampering detected (Tap to View)"
+                    }
+                    sigStatus == NativeCore.SignatureVerificationResult.UNVERIFIED_NO_REFERENCE_FINGERPRINT -> {
+                        if (!fp.isNullOrBlank()) "SHA-256: ${fp.take(8).uppercase()}... (Signature Present - Tap to View)"
+                        else "No reference signature configured"
+                    }
+                    else -> "Unable to read APK signing certificate"
+                }
+
                 IntegrityRow(
                     title = "APK Signature Digest",
-                    isPass = integrityReport.isSignatureValid,
-                    detail = "SHA-256 certificate verified"
+                    isPass = isSigValid,
+                    detail = sigDetail,
+                    showChevron = true,
+                    onClick = { showSignatureDetailsDialog = true }
                 )
 
                 IntegrityRow(
@@ -444,18 +481,164 @@ fun SecurityAuditScreen(
 
         Spacer(modifier = Modifier.height(80.dp))
     }
+
+    if (showSignatureDetailsDialog) {
+        val rawFp = integrityReport.certificateFingerprintSha256 ?: ""
+        val formattedFp = if (rawFp.isNotBlank()) {
+            rawFp.uppercase().chunked(2).joinToString(":")
+        } else {
+            "UNAVAILABLE"
+        }
+        val expectedFp = BuildConfig.EXPECTED_SIGNATURE_SHA256.uppercase().chunked(2).joinToString(":")
+
+        AlertDialog(
+            onDismissRequest = { showSignatureDetailsDialog = false },
+            containerColor = CyberSurface,
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Shield,
+                        contentDescription = null,
+                        tint = if (integrityReport.isSignatureValid) CyberEmerald else CyberLaserRed,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "APK SIGNATURE DIGEST",
+                        color = CyberTextPrimary,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "STATUS:",
+                            color = CyberTextSecondary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        CyberBadge(
+                            text = if (integrityReport.isSignatureValid) "GENUINE / VERIFIED" else if (integrityReport.signatureStatus == NativeCore.SignatureVerificationResult.FAILED_MISMATCH) "MISMATCH / TAMPERED" else "UNVERIFIED REFERENCE",
+                            color = if (integrityReport.isSignatureValid) CyberEmerald else if (integrityReport.signatureStatus == NativeCore.SignatureVerificationResult.FAILED_MISMATCH) CyberLaserRed else CyberGold
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "RUNTIME CERTIFICATE SHA-256:",
+                        color = CyberTextSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(CyberBackground, CutCornerShape(6.dp))
+                            .border(1.dp, CyberBorder, CutCornerShape(6.dp))
+                            .padding(10.dp)
+                    ) {
+                        Text(
+                            text = formattedFp,
+                            color = CyberCyan,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.SemiBold,
+                            lineHeight = 16.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text(
+                        text = "EXPECTED BUILD REFERENCE:",
+                        color = CyberTextSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(CyberBackground, CutCornerShape(6.dp))
+                            .border(1.dp, CyberBorder, CutCornerShape(6.dp))
+                            .padding(10.dp)
+                    ) {
+                        Text(
+                            text = expectedFp,
+                            color = CyberTextMuted,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            lineHeight = 16.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "Cryptographic certificate fingerprint matching ensures that this APK was signed with the authorized developer keystore and has not been repackaged, injected with malware, or modified.",
+                        color = CyberTextMuted,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    CyberButton(
+                        text = "COPY SHA-256 DIGEST",
+                        color = CyberCyan,
+                        onClick = {
+                            clipboardManager.setText(AnnotatedString(formattedFp))
+                            Toast.makeText(context, "APK Signature SHA-256 copied to clipboard", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(40.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                CyberButton(
+                    text = "CLOSE",
+                    color = CyberEmerald,
+                    onClick = { showSignatureDetailsDialog = false },
+                    modifier = Modifier.height(36.dp)
+                )
+            }
+        )
+    }
 }
 
 @Composable
 private fun IntegrityRow(
     title: String,
     isPass: Boolean,
-    detail: String
+    detail: String,
+    showChevron: Boolean = false,
+    onClick: (() -> Unit)? = null
 ) {
+    val clickableModifier = if (onClick != null) {
+        Modifier
+            .clip(CutCornerShape(6.dp))
+            .clickable(onClick = onClick)
+    } else Modifier
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp),
+            .then(clickableModifier)
+            .padding(vertical = 6.dp, horizontal = if (onClick != null) 4.dp else 0.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
@@ -472,11 +655,22 @@ private fun IntegrityRow(
                 fontSize = 11.sp
             )
         }
-        Icon(
-            imageVector = if (isPass) Icons.Default.CheckCircle else Icons.Default.Warning,
-            contentDescription = null,
-            tint = if (isPass) CyberEmerald else CyberLaserRed,
-            modifier = Modifier.size(20.dp)
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = if (isPass) Icons.Default.CheckCircle else Icons.Default.Warning,
+                contentDescription = null,
+                tint = if (isPass) CyberEmerald else CyberLaserRed,
+                modifier = Modifier.size(20.dp)
+            )
+            if (showChevron) {
+                Spacer(modifier = Modifier.width(4.dp))
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = "Details",
+                    tint = CyberTextMuted,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
     }
 }

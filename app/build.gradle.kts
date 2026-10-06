@@ -29,6 +29,7 @@ android {
     ndk {
       abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
     }
+    buildConfigField("String", "EXPECTED_SIGNATURE_SHA256", "\"f550f9c08690eb7a5388f03a7b91689ed5d43d49b23e9f7101e5bce378faee4f\"")
   }
 
   externalNativeBuild {
